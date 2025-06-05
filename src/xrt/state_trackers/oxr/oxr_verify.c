@@ -516,6 +516,12 @@ oxr_verify_view_config_type(struct oxr_logger *log,
 		}
 	}
 
+#if defined(OXR_HAVE_VARJO_quad_views)
+	if (inst->extensions.VARJO_quad_views && view_conf == XR_VIEW_CONFIGURATION_TYPE_PRIMARY_QUAD_VARJO) {
+		return XR_SUCCESS;
+	}
+#endif
+
 	return oxr_error(log, XR_ERROR_VALIDATION_FAILURE, "(%s == 0x%08x) invalid view configuration type",
 	                 view_conf_name, view_conf);
 }
