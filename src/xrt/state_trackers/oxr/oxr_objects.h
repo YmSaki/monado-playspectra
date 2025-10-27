@@ -1275,6 +1275,12 @@ struct oxr_instance
 		 */
 		bool disable_vulkan_format_depth_stencil;
 
+		/*!
+		 * Disable the listing of quad views as a supported view config,
+		 * the extensions are still exposed.
+		 */
+		bool disable_quad_views;
+
 		//! Unreal 4 has a bug calling xrEndSession; the function should just exit
 		bool skip_end_session;
 

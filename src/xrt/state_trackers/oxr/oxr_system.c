@@ -42,6 +42,11 @@ allowed_to_expose_quad_views(const struct oxr_system *sys)
 {
 	const struct oxr_instance *inst = sys->inst;
 
+	// App has been quirked to not be given quad views.
+	if (inst->quirks.disable_quad_views) {
+		return false;
+	}
+
 	// Valid in OpenXR 1.1 and forward.
 	if (inst->openxr_version.major_minor >= XR_MAKE_VERSION(1, 1, 0)) {
 		return true;
