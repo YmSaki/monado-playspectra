@@ -777,6 +777,7 @@ filter_device_features(struct vk_bundle *vk,
 	         "Features:"
 	         "\n\text_fmt_resolve: %i"
 	         "\n\tnull_descriptor: %i"
+	         "\n\tpresent_wait: %i"
 	         "\n\tshader_image_gather_extended: %i"
 	         "\n\tshader_storage_image_write_without_format: %i"
 	         "\n\tstorage_buffer_8bit_access: %i"
@@ -785,6 +786,7 @@ filter_device_features(struct vk_bundle *vk,
 	         "\n\tvideo_maintenance_1: %i",                              //
 	         device_features->ext_fmt_resolve,                           //
 	         device_features->null_descriptor,                           //
+	         device_features->present_wait,                              //
 	         device_features->shader_image_gather_extended,              //
 	         device_features->shader_storage_image_write_without_format, //
 	         device_features->storage_buffer_8bit_access,                //
