@@ -110,6 +110,15 @@ oxr_action_sync_data(struct oxr_logger *log,
                      const XrActiveActionSet *actionSets,
                      const XrActiveActionSetPrioritiesEXT *activePriorities);
 
+XrResult
+oxr_action_sync_data_with_context(struct oxr_logger *log,
+                                  struct oxr_session *sess,
+                                  struct oxr_session_action_context *sess_context,
+                                  uint32_t countActionSets,
+                                  const XrActiveActionSet *actionSets,
+                                  const XrActiveActionSetPrioritiesEXT *activePriorities,
+                                  bool *out_interaction_profile_changed);
+
 /*!
  * @public @memberof oxr_session
  */

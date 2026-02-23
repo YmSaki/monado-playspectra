@@ -1942,11 +1942,42 @@ oxr_action_sync_data(struct oxr_logger *log,
                      const XrActiveActionSet *actionSets,
                      const XrActiveActionSetPrioritiesEXT *activePriorities)
 {
-	struct oxr_session_action_context *sess_context = &sess->action_context;
+	bool interaction_profile_changed = false;
+	XrResult ret = oxr_action_sync_data_with_context( //
+	    log,                                          //
+	    sess,                                         //
+	    &sess->action_context,                        //
+	    countActionSets,                              //
+	    actionSets,                                   //
+	    activePriorities,                             //
+	    &interaction_profile_changed);                //
+	if (ret != XR_SUCCESS) {
+		return ret;
+	}
+
+	if (interaction_profile_changed) {
+		oxr_event_push_XrEventDataInteractionProfileChanged(log, sess);
+	}
+
+	return oxr_session_success_focused_result(sess);
+}
+
+XrResult
+oxr_action_sync_data_with_context(struct oxr_logger *log,
+                                  struct oxr_session *sess,
+                                  struct oxr_session_action_context *sess_context,
+                                  uint32_t countActionSets,
+                                  const XrActiveActionSet *actionSets,
+                                  const XrActiveActionSetPrioritiesEXT *activePriorities,
+                                  bool *out_interaction_profile_changed)
+{
 	struct oxr_instance *inst = sess->sys->inst;
 
 	struct oxr_action_set *act_set = NULL;
 	struct oxr_action_set_attachment *act_set_attached = NULL;
+
+	// Reset.
+	*out_interaction_profile_changed = false;
 
 	/*
 	 * No side-effects allowed in this section as we are still
@@ -1986,23 +2017,17 @@ oxr_action_sync_data(struct oxr_logger *log,
 
 	// Should we redo the bindings?
 	{
-		bool interaction_profile_changed = false;
-
 		os_mutex_lock(&sess_context->sync_actions_mutex);
 		if (sess_context->dynamic_roles_generation_id < roles.roles.generation_id) {
 			sess_context->dynamic_roles_generation_id = roles.roles.generation_id;
-			session_update_action_bindings(    //
-			    log,                           //
-			    inst,                          //
-			    sess_context,                  //
-			    &roles,                        //
-			    &interaction_profile_changed); //
+			session_update_action_bindings(       //
+			    log,                              //
+			    inst,                             //
+			    sess_context,                     //
+			    &roles,                           //
+			    out_interaction_profile_changed); //
 		}
 		os_mutex_unlock(&sess_context->sync_actions_mutex);
-
-		if (interaction_profile_changed) {
-			oxr_event_push_XrEventDataInteractionProfileChanged(log, sess);
-		}
 	}
 
 	if (countActionSets == 0) {
@@ -2083,7 +2108,7 @@ oxr_action_sync_data(struct oxr_logger *log,
 		}
 	}
 
-	return oxr_session_success_focused_result(sess);
+	return XR_SUCCESS;
 }
 
 static void
