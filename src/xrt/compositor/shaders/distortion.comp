@@ -116,9 +116,10 @@ void main()
 
 	vec2 dist_uv = position_to_uv(extent, ix, iy);
 
-	vec2 r_uv = texture(distortion[iz + 0], dist_uv).xy;
-	vec2 g_uv = texture(distortion[iz + 2], dist_uv).xy;
-	vec2 b_uv = texture(distortion[iz + 4], dist_uv).xy;
+	uint view_count = gl_NumWorkGroups.z;
+	vec2 r_uv = texture(distortion[view_count * 0 + iz], dist_uv).xy;
+	vec2 g_uv = texture(distortion[view_count * 1 + iz], dist_uv).xy;
+	vec2 b_uv = texture(distortion[view_count * 2 + iz], dist_uv).xy;
 
 	// Do any transformation needed.
 	r_uv = transform_uv(r_uv, iz);
