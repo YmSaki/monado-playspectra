@@ -635,8 +635,7 @@ select_instances_extensions(struct comp_compositor *c,
 {
 #ifdef XRT_FEATURE_WINDOW_PEEK
 	if (!comp_window_peek_get_vk_instance_exts(required_builder)) {
-		COMP_ERROR(c, "Failed to get required vulkan instance extensions for peek window.");
-		return false;
+		COMP_WARN(c, "Failed to get vulkan instance extensions for peek window.");
 	}
 #endif
 	return true;
