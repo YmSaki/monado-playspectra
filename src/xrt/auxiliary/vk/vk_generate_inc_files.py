@@ -190,6 +190,8 @@ def get_device_cmds():
         Cmd("vkSetDebugUtilsObjectTagEXT", requires=("VK_EXT_debug_utils",)),
         None,
         Cmd("vkWaitForPresentKHR", requires=("VK_KHR_present_wait",)),
+        None,
+        Cmd("vkGetSwapchainStatusKHR", requires=("VK_KHR_shared_presentable_image",)),
     ]
 
 
@@ -316,6 +318,7 @@ DEVICE_EXTENSIONS_TO_CHECK = [
     "VK_KHR_maintenance4",
     "VK_KHR_present_wait",
     "VK_KHR_portability_subset",
+    "VK_KHR_shared_presentable_image",
     "VK_KHR_synchronization2",
     "VK_KHR_timeline_semaphore",
     "VK_KHR_video_maintenance1",

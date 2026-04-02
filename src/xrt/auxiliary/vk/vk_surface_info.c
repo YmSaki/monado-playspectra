@@ -102,6 +102,15 @@ vk_surface_info_fill_in(struct vk_bundle *vk, struct vk_surface_info *info, VkSu
 		    .sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR,
 		    .pNext = NULL,
 		};
+#ifdef VK_KHR_shared_presentable_image
+		VkSharedPresentSurfaceCapabilitiesKHR shared_present_caps = {
+		    .sType = VK_STRUCTURE_TYPE_SHARED_PRESENT_SURFACE_CAPABILITIES_KHR,
+		    .pNext = NULL,
+		};
+		if (vk->has_KHR_shared_presentable_image) {
+			surf_caps2.pNext = &shared_present_caps;
+		}
+#endif
 		ret = vk->vkGetPhysicalDeviceSurfaceCapabilities2KHR( //
 		    vk->physical_device,                              //
 		    &surf_info,                                       //
@@ -109,6 +118,7 @@ vk_surface_info_fill_in(struct vk_bundle *vk, struct vk_surface_info *info, VkSu
 		VK_CHK_WITH_GOTO(ret, "vkGetPhysicalDeviceSurfaceCapabilities2KHR", error);
 
 		info->caps = surf_caps2.surfaceCapabilities;
+		info->shared_present_caps = shared_present_caps;
 	}
 #endif
 
@@ -160,6 +170,11 @@ vk_print_surface_info(struct vk_bundle *vk, struct vk_surface_info *info, enum u
 	for (uint32_t i = 0; i < info->present_mode_count; i++) {
 		PNTT("%s", vk_present_mode_string(info->present_modes[i]));
 	}
+
+#if defined(VK_KHR_get_surface_capabilities2) && defined(VK_KHR_shared_presentable_image)
+	PNT("shared_present_caps.sharedPresentSupportedUsageFlags:");
+	PRINT_BITS(info->shared_present_caps.sharedPresentSupportedUsageFlags, vk_image_usage_flag_string);
+#endif
 
 	PNT("formats(%u):", info->format_count);
 	for (uint32_t i = 0; i < info->format_count; i++) {
