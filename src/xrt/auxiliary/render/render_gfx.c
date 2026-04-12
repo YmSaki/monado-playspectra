@@ -81,10 +81,24 @@ create_implicit_render_pass(struct vk_bundle *vk,
 	    },
 	};
 
-	/*
-	 * We don't use any VkSubpassDependency structs, instead relying on the
-	 * implicit dependencies inserted by the runtime implementation.
+	/*!
+	 * Explicit subpass dependency required to synchronize the implicit layout
+	 * transition at render pass begin with the swapchain acquire semaphore, which
+	 * signals at VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT. Without this, the
+	 * implicit dependency is not enough and results in a SYNC-HAZARD-WRITE-AFTER-READ
+	 * (or WRITE-AFTER-WRITE with shared presentable images) validation errors.
 	 */
+	const VkSubpassDependency subpass_dependencies[1] = {
+	    {
+	        .srcSubpass = VK_SUBPASS_EXTERNAL,
+	        .dstSubpass = 0,
+	        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+	        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+	        .srcAccessMask = 0,
+	        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
+	        .dependencyFlags = 0,
+	    },
+	};
 
 	VkRenderPassCreateInfo render_pass_info = {
 	    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
@@ -92,8 +106,8 @@ create_implicit_render_pass(struct vk_bundle *vk,
 	    .pAttachments = attachments,
 	    .subpassCount = ARRAY_SIZE(subpasses),
 	    .pSubpasses = subpasses,
-	    .dependencyCount = 0,
-	    .pDependencies = NULL,
+	    .dependencyCount = ARRAY_SIZE(subpass_dependencies),
+	    .pDependencies = subpass_dependencies,
 	};
 
 	VkRenderPass render_pass = VK_NULL_HANDLE;
