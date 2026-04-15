@@ -766,7 +766,7 @@ renderer_acquire_swapchain_image(struct comp_renderer *r)
 	}
 	ret = comp_target_acquire(r->c->target, &buffer_index);
 
-	if ((ret == VK_ERROR_OUT_OF_DATE_KHR) || (ret == VK_SUBOPTIMAL_KHR)) {
+	while ((ret == VK_ERROR_OUT_OF_DATE_KHR) || (ret == VK_SUBOPTIMAL_KHR)) {
 		COMP_DEBUG(r->c, "Received %s.", vk_result_string(ret));
 
 		if (!renderer_ensure_images_and_renderings(r, true)) {
@@ -779,10 +779,9 @@ renderer_acquire_swapchain_image(struct comp_renderer *r)
 
 		/* Acquire image again to silence validation error */
 		ret = comp_target_acquire(r->c->target, &buffer_index);
-		if (ret != VK_SUCCESS) {
-			COMP_ERROR(r->c, "comp_target_acquire: %s", vk_result_string(ret));
-		}
-	} else if (ret != VK_SUCCESS) {
+	}
+
+	if (ret != VK_SUCCESS) {
 		COMP_ERROR(r->c, "comp_target_acquire: %s", vk_result_string(ret));
 	}
 
