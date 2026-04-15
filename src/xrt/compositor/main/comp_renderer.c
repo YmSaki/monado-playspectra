@@ -801,7 +801,7 @@ renderer_resize(struct comp_renderer *r)
 	renderer_ensure_images_and_renderings(r, true);
 }
 
-static void
+static bool
 renderer_present_swapchain_image(struct comp_renderer *r, uint64_t desired_present_time_ns, uint64_t present_slop_ns)
 {
 	COMP_TRACE_MARKER();
@@ -822,11 +822,13 @@ renderer_present_swapchain_image(struct comp_renderer *r, uint64_t desired_prese
 
 	if (ret == VK_ERROR_OUT_OF_DATE_KHR || ret == VK_SUBOPTIMAL_KHR) {
 		renderer_resize(r);
-		return;
+		return ret != VK_ERROR_OUT_OF_DATE_KHR;
 	}
 	if (ret != VK_SUCCESS) {
 		COMP_ERROR(r->c, "vk_swapchain_present: %s", vk_result_string(ret));
+		return false;
 	}
+	return true;
 }
 
 static void
@@ -1156,8 +1158,8 @@ comp_renderer_draw(struct comp_renderer *r)
 	}
 #endif
 
-	renderer_present_swapchain_image(r, c->frame.rendering.desired_present_time_ns,
-	                                 c->frame.rendering.present_slop_ns);
+	bool present_success = renderer_present_swapchain_image(r, c->frame.rendering.desired_present_time_ns,
+	                                                        c->frame.rendering.present_slop_ns);
 
 	// Save for timestamps below.
 	uint64_t frame_id = c->frame.rendering.id;
@@ -1233,7 +1235,9 @@ comp_renderer_draw(struct comp_renderer *r)
 		render_gfx_fini(&render_g);
 	}
 
-	renderer_wait_for_present(r, desired_present_time_ns);
+	if (present_success) {
+		renderer_wait_for_present(r, desired_present_time_ns);
+	}
 
 	comp_target_update_timings(ct);
 
