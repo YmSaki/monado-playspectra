@@ -86,6 +86,7 @@ out_session:
 	return XRT_SUCCESS;
 
 err:
+	bs->base.destroy(&bs->base);
 	return xret;
 }
 
