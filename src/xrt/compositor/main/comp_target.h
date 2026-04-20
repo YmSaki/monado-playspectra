@@ -189,6 +189,13 @@ struct comp_target
 	bool (*check_ready)(struct comp_target *ct);
 
 	/*!
+	 * Is this target shared presentable image?
+	 *
+	 * Call before after @ref create_images
+	 */
+	bool (*is_shared_presentable_image)(struct comp_target *ct);
+
+	/*!
 	 * Create or recreate the image(s) of the target, for swapchain based
 	 * targets this will (re)create the swapchain.
 	 *
@@ -402,6 +409,20 @@ comp_target_check_ready(struct comp_target *ct)
 	COMP_TRACE_MARKER();
 
 	return ct->check_ready(ct);
+}
+
+/*!
+ * @copydoc comp_target::is_shared_presentable_image
+ *
+ * @public @memberof comp_target
+ * @ingroup comp_main
+ */
+static inline bool
+comp_target_is_shared_presentable_image(struct comp_target *ct)
+{
+	COMP_TRACE_MARKER();
+
+	return ct->is_shared_presentable_image(ct);
 }
 
 /*!

@@ -162,6 +162,13 @@ struct comp_renderer
 	 */
 	uint32_t buffer_count;
 
+	/*!
+	 * Only relevant when using present modes from VK_KHR_shared_presentable_image,
+	 * tracks whether we have waited on the shared present semaphore at least once,
+	 * subsequents present waits are redundant and can be skipped.
+	 */
+	bool shared_present_semaphore_wait_once;
+
 	//! @}
 };
 
@@ -650,6 +657,26 @@ renderer_wait_for_last_fence(struct comp_renderer *r)
 	r->fenced_buffer = -1;
 }
 
+static inline bool
+requires_present_acquire_wait(struct comp_renderer *r)
+{
+	/*!
+	 * With shared presentable images there is only one image
+	 * shared between the presentation layer and the compositor,
+	 *
+	 * We only need to wait on the first "acquire image",
+	 * subsueqent frames waiting is redundant.
+	 */
+	if (comp_target_is_shared_presentable_image(r->c->target)) {
+		if (r->shared_present_semaphore_wait_once) {
+			return false;
+		}
+		r->shared_present_semaphore_wait_once = true;
+	}
+
+	return true;
+}
+
 static XRT_CHECK_RESULT VkResult
 renderer_submit_queue(struct comp_renderer *r, VkCommandBuffer cmd, VkPipelineStageFlags pipeline_stage_flag)
 {
@@ -684,8 +711,9 @@ renderer_submit_queue(struct comp_renderer *r, VkCommandBuffer cmd, VkPipelineSt
 	struct vk_semaphore_list_signal signal_sems = XRT_STRUCT_INIT;
 	struct vk_submit_info_builder builder = XRT_STRUCT_INIT;
 
-	// Add wait semaphore (present_complete from target).
-	ADD_WAIT(wait_sems, ct->semaphores.present_complete, pipeline_stage_flag, false);
+	if (requires_present_acquire_wait(r)) {
+		ADD_WAIT(wait_sems, ct->semaphores.present_complete, pipeline_stage_flag, false);
+	}
 
 	// Add signal semaphore (render_complete to target).
 	ADD_SIGNAL(signal_sems, ct->semaphores.render_complete, ct->semaphores.render_complete_is_timeline);

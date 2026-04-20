@@ -520,6 +520,9 @@ static const char *instance_extensions_common[] = {
 };
 
 static const char *optional_instance_extensions[] = {
+#ifdef VK_KHR_get_surface_capabilities2
+    VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME,
+#endif
 #ifdef VK_EXT_swapchain_colorspace
     VK_EXT_SWAPCHAIN_COLORSPACE_EXTENSION_NAME,
 #endif
@@ -634,6 +637,9 @@ static const char *optional_device_extensions[] = {
 #endif
 #ifdef VK_KHR_synchronization2
     VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+#endif
+#ifdef VK_KHR_shared_presentable_image
+    VK_KHR_SHARED_PRESENTABLE_IMAGE_EXTENSION_NAME,
 #endif
 };
 

@@ -54,6 +54,26 @@ get_vk(struct comp_target_swapchain *cts)
 	return &cts->base.c->base.vk;
 }
 
+static inline bool
+is_shared_present_mode(struct vk_bundle *vk, VkPresentModeKHR present_mode)
+{
+#ifdef VK_KHR_shared_presentable_image
+	return vk->has_KHR_shared_presentable_image &&                           //
+	       (present_mode == VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR || //
+	        present_mode == VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR);      //
+#else
+	(void)present_mode;
+	return false;
+#endif
+}
+
+static inline bool
+is_shared_presentable_image(struct comp_target_swapchain *cts)
+{
+	struct vk_bundle *vk = get_vk(cts);
+	return is_shared_present_mode(vk, cts->present_mode);
+}
+
 static void
 destroy_old(struct comp_target_swapchain *cts, VkSwapchainKHR old)
 {
@@ -184,6 +204,14 @@ select_image_count(struct comp_target_swapchain *cts,
                    VkSurfaceCapabilitiesKHR caps,
                    uint32_t preferred_at_least_image_count)
 {
+	if (is_shared_presentable_image(cts)) {
+		/*!
+		 * Ignore caps.minImageCount as it was observed one android device
+		 * it's value was still > 1 for non-shared present modes.
+		 */
+		return 1;
+	}
+
 	// Min is equals to or greater to what we prefer, pick min then.
 	if (caps.minImageCount >= preferred_at_least_image_count) {
 		return caps.minImageCount;
@@ -206,18 +234,43 @@ select_image_count(struct comp_target_swapchain *cts,
 static bool
 check_surface_present_mode(struct comp_target_swapchain *cts,
                            const struct vk_surface_info *info,
+                           VkImageUsageFlags image_usage,
                            VkPresentModeKHR present_mode)
 {
+	struct vk_bundle *vk = get_vk(cts);
+
+	bool image_usage_supported = true;
 	for (uint32_t i = 0; i < info->present_mode_count; i++) {
-		if (info->present_modes[i] == present_mode) {
+		if (info->present_modes[i] != present_mode) {
+			continue;
+		}
+
+#ifdef VK_KHR_shared_presentable_image
+		if (!is_shared_present_mode(vk, present_mode)) {
 			return true;
 		}
+
+		const VkImageUsageFlags supported_image_usage =
+		    info->shared_present_caps.sharedPresentSupportedUsageFlags;
+		if ((supported_image_usage & image_usage) != image_usage) {
+			image_usage_supported = false;
+			break;
+		}
+#endif
+		// Everything checked out!
+		return true;
 	}
 
 	struct u_pp_sink_stack_only sink;
 	u_pp_delegate_t dg = u_pp_sink_stack_only_init(&sink);
 
 	u_pp(dg, "Present mode %s not supported, available:", vk_present_mode_string(present_mode));
+
+	if (!image_usage_supported) {
+		u_pp(dg, "Requested image_usage 0x%x not supported for present mode %s.", image_usage,
+		     vk_present_mode_string(present_mode));
+	}
+
 	for (uint32_t i = 0; i < info->present_mode_count; i++) {
 		u_pp(dg, "\n\t%s", vk_present_mode_string(info->present_modes[i]));
 	}
@@ -706,7 +759,12 @@ comp_target_swapchain_create_images(struct comp_target *ct,
 	}
 
 	// Check that the present mode is supported.
-	if (!check_surface_present_mode(cts, &info, cts->present_mode)) {
+	bool bret = check_surface_present_mode( //
+	    cts,                                //
+	    &info,                              //
+	    create_info->image_usage,           //
+	    cts->present_mode);                 //
+	if (!bret) {
 		goto error_print_and_free;
 	}
 
@@ -827,6 +885,14 @@ comp_target_swapchain_create_images(struct comp_target *ct,
 	cts->base.format = cts->surface.format.format;
 	cts->base.final_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 	cts->base.surface_transform = surface_caps.currentTransform;
+	cts->base.present_load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+
+#ifdef VK_KHR_shared_presentable_image
+	if (is_shared_presentable_image(cts)) {
+		cts->base.present_load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		cts->base.final_layout = VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR;
+	}
+#endif
 
 	create_image_views(cts);
 
@@ -875,13 +941,32 @@ comp_target_swapchain_acquire_next_image(struct comp_target *ct, uint32_t *out_i
 		return VK_ERROR_INITIALIZATION_FAILED;
 	}
 
-	return vk->vkAcquireNextImageKHR(          //
+#ifdef VK_KHR_shared_presentable_image
+	const bool is_shared_presentable = is_shared_presentable_image(cts);
+
+	if (is_shared_presentable && cts->shared_present_acquired) {
+		*out_index = 0;
+		return vk->vkGetSwapchainStatusKHR(vk->device, cts->swapchain.handle);
+	}
+#endif
+
+	VkResult ret = vk->vkAcquireNextImageKHR(  //
 	    vk->device,                            // device
 	    cts->swapchain.handle,                 // swapchain
 	    UINT64_MAX,                            // timeout
 	    cts->base.semaphores.present_complete, // semaphore
 	    VK_NULL_HANDLE,                        // fence
 	    out_index);                            // pImageIndex
+	VK_CHK_AND_RET(ret, "vkAcquireNextImageKHR");
+
+#ifdef VK_KHR_shared_presentable_image
+	if (is_shared_presentable) {
+		assert(*out_index == 0);
+		cts->shared_present_acquired = true;
+	}
+#endif
+
+	return ret;
 }
 
 static VkResult
@@ -1005,6 +1090,13 @@ comp_target_swapchain_check_ready(struct comp_target *ct)
 {
 	struct comp_target_swapchain *cts = (struct comp_target_swapchain *)ct;
 	return cts->surface.handle != VK_NULL_HANDLE;
+}
+
+static inline bool
+comp_target_swapchain_is_shared_presentable_image(struct comp_target *ct)
+{
+	struct comp_target_swapchain *cts = (struct comp_target_swapchain *)ct;
+	return is_shared_presentable_image(cts);
 }
 
 
@@ -1189,6 +1281,7 @@ comp_target_swapchain_init_and_set_fnptrs(struct comp_target_swapchain *cts,
 {
 	cts->timing_usage = timing_usage;
 	cts->base.check_ready = comp_target_swapchain_check_ready;
+	cts->base.is_shared_presentable_image = comp_target_swapchain_is_shared_presentable_image;
 	cts->base.create_images = comp_target_swapchain_create_images;
 	cts->base.has_images = comp_target_swapchain_has_images;
 	cts->base.acquire = comp_target_swapchain_acquire_next_image;

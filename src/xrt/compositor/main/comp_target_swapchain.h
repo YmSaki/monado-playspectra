@@ -115,6 +115,16 @@ struct comp_target_swapchain
 	 * VkSWapchain, this keeps track if we have done it.
 	 */
 	bool has_logged_info;
+
+#ifdef VK_KHR_shared_presentable_image
+	/*!
+	 * Only relevant when using present modes from VK_KHR_shared_presentable_image,
+	 *
+	 * Shared presentable images for front buffer rendering we only acquire the image once,
+	 * and then reuse it. This will be set the first time we acquire an image.
+	 */
+	bool shared_present_acquired;
+#endif
 };
 
 
