@@ -64,6 +64,7 @@ struct rift_builder
 	enum u_logging_level log_level;
 
 	struct rift_hmd *hmd;
+	struct t_timing_event_source *timing_event_source;
 
 #ifdef XRT_BUILD_DRIVER_RIFT_SENSOR
 	struct rift_sensor_context *sensor_context;
@@ -197,6 +198,7 @@ rift_estimate_system(struct xrt_builder *xb,
 
 void
 rift_open_pssense(struct rift_builder *rb,
+                  struct xrt_frame_context *xfctx,
                   struct xrt_system_devices *xsysd,
                   struct xrt_prober *xp,
                   struct xrt_prober_device **xpdevs,
@@ -212,12 +214,17 @@ rift_open_pssense(struct rift_builder *rb,
 	    XRT_BUS_TYPE_BLUETOOTH);
 
 	if (left_xpdev != NULL) {
-		struct xrt_device *left_xdev = pssense_create(xp, left_xpdev);
+		struct t_timing_event_sink *timing_sink;
+		struct xrt_device *left_xdev = pssense_create(xp, left_xpdev, xfctx, &timing_sink);
 		if (left_xdev == NULL) {
 			RIFT_ERROR(rb, "PS Sense left controller device creation failed.");
 		} else {
 			xsysd->static_xdevs[xsysd->static_xdev_count++] = left_xdev;
 			tbrh->left = left_xdev;
+
+			if (rb->timing_event_source != NULL) {
+				t_timing_event_source_add_sink(rb->timing_event_source, timing_sink);
+			}
 		}
 	}
 
@@ -229,12 +236,17 @@ rift_open_pssense(struct rift_builder *rb,
 	    XRT_BUS_TYPE_BLUETOOTH);
 
 	if (right_xpdev != NULL) {
-		struct xrt_device *right_xdev = pssense_create(xp, right_xpdev);
+		struct t_timing_event_sink *timing_sink;
+		struct xrt_device *right_xdev = pssense_create(xp, right_xpdev, xfctx, &timing_sink);
 		if (right_xdev == NULL) {
 			RIFT_ERROR(rb, "PS Sense right controller device creation failed.");
 		} else {
 			xsysd->static_xdevs[xsysd->static_xdev_count++] = right_xdev;
 			tbrh->right = right_xdev;
+
+			if (rb->timing_event_source != NULL) {
+				t_timing_event_source_add_sink(rb->timing_event_source, timing_sink);
+			}
 		}
 	}
 #endif
@@ -381,6 +393,8 @@ rift_open_system_impl(struct xrt_builder *xb,
 			goto unlock_and_fail;
 		}
 
+		rb->timing_event_source = rift_hmd_get_timing_event_source(rb->hmd);
+
 		// Just clamp instead of overflowing the buffer
 		if (created_devices + (int)xsysd->static_xdev_count > XRT_SYSTEM_MAX_DEVICES) {
 			created_devices = XRT_SYSTEM_MAX_DEVICES - (int)xsysd->static_xdev_count;
@@ -402,7 +416,7 @@ rift_open_system_impl(struct xrt_builder *xb,
 		}
 	}
 
-	rift_open_pssense(rb, xsysd, xp, xpdevs, xpdev_count, tbrh);
+	rift_open_pssense(rb, xfctx, xsysd, xp, xpdevs, xpdev_count, tbrh);
 	rift_open_contactglove(rb, xsysd, xp, xpdevs, xpdev_count, tbrh);
 
 	xret = xrt_prober_unlock_list(xp, &xpdevs);

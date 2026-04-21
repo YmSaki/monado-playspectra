@@ -10,7 +10,12 @@
 
 #pragma once
 
+#include "xrt/xrt_frame.h"
+
+#include "tracking/t_time_sync.h"
+
 #include <stdlib.h>
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,24 +34,18 @@ extern "C" {
 /*!
  * Create a PlayStation Sense controller device.
  *
+ * @param xp                   The prober creating the device.
+ * @param xpdev                The prober device.
+ * @param xfctx                The frame context.
+ * @param[out] out_timing_sink Optional timing event sink output pointer.
+ *
  * @ingroup drv_pssense
  */
 struct xrt_device *
-pssense_create(struct xrt_prober *xp, struct xrt_prober_device *xpdev);
-
-/*!
- * Probing function for PlayStation Sense devices.
- *
- * @ingroup drv_pssense
- * @see xrt_prober_found_func_t
- */
-int
-pssense_found(struct xrt_prober *xp,
-              struct xrt_prober_device **devices,
-              size_t device_count,
-              size_t index,
-              cJSON *attached_data,
-              struct xrt_device **out_xdevs);
+pssense_create(struct xrt_prober *xp,
+               struct xrt_prober_device *xpdev,
+               struct xrt_frame_context *xfctx,
+               struct t_timing_event_sink **out_timing_sink);
 
 /*!
  * @dir drivers/pssense
