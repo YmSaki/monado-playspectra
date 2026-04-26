@@ -962,6 +962,7 @@ struct rift_hmd
 	struct m_relation_history *raw_constellation_relation_hist;
 	timepoint_ns last_ff_timestamp_ns;
 	struct m_ff_f64 *gravity_correction;
+	timepoint_ns latest_constellation_ts;
 
 	struct t_constellation_tracker_led_model led_model;
 	struct xrt_pose T_imu_device;
