@@ -1086,6 +1086,26 @@ render_gfx_end_target(struct render_gfx *render)
 }
 
 void
+render_gfx_clear_color_attachment(struct render_gfx *render, const VkClearColorValue *color)
+{
+	struct vk_bundle *vk = vk_from_render(render);
+
+	assert(render->rtr != NULL);
+
+	const VkClearAttachment clear_attachment = {
+	    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+	    .colorAttachment = 0,
+	    .clearValue.color = *color,
+	};
+	const VkClearRect clear_rect = {
+	    .rect = render->rtr->render_area,
+	    .baseArrayLayer = 0,
+	    .layerCount = 1,
+	};
+	vk->vkCmdClearAttachments(render->r->cmd, 1, &clear_attachment, 1, &clear_rect);
+}
+
+void
 render_gfx_begin_view(struct render_gfx *render,
                       uint32_t view,
                       const struct render_viewport_data *viewport_data,

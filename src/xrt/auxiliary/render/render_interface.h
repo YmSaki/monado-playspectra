@@ -1071,6 +1071,13 @@ render_gfx_end_target(struct render_gfx *render);
  * @public @memberof render_gfx
  */
 void
+render_gfx_clear_color_attachment(struct render_gfx *render, const VkClearColorValue *color);
+
+/*!
+ * @pre successful @ref render_gfx_begin_target call
+ * @public @memberof render_gfx
+ */
+void
 render_gfx_begin_view(struct render_gfx *render,
                       uint32_t view,
                       const struct render_viewport_data *viewport_data,
