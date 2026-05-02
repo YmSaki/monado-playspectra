@@ -323,6 +323,7 @@ if(XRT_BUILD_DRIVER_RIFT)
 			aux_util
 			aux_util_sink
 			aux_math
+			constellation
 			xrt-external-cjson
 			xrt-external-tinyceres
 		)
