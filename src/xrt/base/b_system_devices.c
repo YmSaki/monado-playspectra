@@ -9,6 +9,7 @@
  */
 
 #include "b_system_devices.h"
+#include "b_hand_tracker.h"
 
 #include "util/u_device.h"
 #include "util/u_logging.h"
@@ -200,6 +201,14 @@ feature_dec(struct xrt_system_devices *xsysd, enum xrt_device_feature_type type)
 	return XRT_SUCCESS;
 }
 
+static xrt_result_t
+create_hand_tracker(struct xrt_system_devices *xsysd,
+                    const struct xrt_hand_tracker_create_info *info,
+                    struct xrt_hand_tracker **out_xht)
+{
+	return b_hand_tracker_create(xsysd, info, out_xht);
+}
+
 /*
  *
  * 'Exported' functions.
@@ -211,6 +220,7 @@ b_system_devices_allocate(void)
 {
 	struct b_system_devices *bsysd = U_TYPED_CALLOC(struct b_system_devices);
 	bsysd->base.destroy = destroy;
+	bsysd->base.create_hand_tracker = create_hand_tracker;
 
 	return bsysd;
 }
@@ -235,6 +245,7 @@ b_system_devices_static_allocate(void)
 	bsysds->base.base.get_roles = get_roles;
 	bsysds->base.base.feature_inc = feature_inc;
 	bsysds->base.base.feature_dec = feature_dec;
+	bsysds->base.base.create_hand_tracker = create_hand_tracker;
 
 	return bsysds;
 }

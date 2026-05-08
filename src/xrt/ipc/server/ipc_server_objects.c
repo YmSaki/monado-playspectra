@@ -10,6 +10,7 @@
 #include "xrt/xrt_device.h"
 #include "xrt/xrt_tracking.h"
 #include "xrt/xrt_space.h"
+#include "xrt/xrt_hand_tracker.h"
 
 #include "shared/ipc_protocol.h"
 #include "server/ipc_server.h"
@@ -214,6 +215,72 @@ ipc_server_objects_destroy_xspc(volatile struct ipc_client_state *ics, uint32_t 
 
 	struct xrt_space **xspc_ptr = (struct xrt_space **)&ics->xspcs[id];
 	xrt_space_reference(xspc_ptr, NULL);
+
+	return XRT_SUCCESS;
+}
+
+
+/*
+ *
+ * Hand tracker functions.
+ *
+ */
+
+xrt_result_t
+ipc_server_objects_get_xht_and_validate(volatile struct ipc_client_state *ics,
+                                        uint32_t id,
+                                        struct xrt_hand_tracker **out_xht)
+{
+	if (id >= IPC_MAX_CLIENT_HAND_TRACKERS) {
+		IPC_ERROR(ics->server, "Invalid hand tracker ID %u (>= IPC_MAX_CLIENT_HAND_TRACKERS)", id);
+		return XRT_ERROR_IPC_FAILURE;
+	}
+
+	struct xrt_hand_tracker *xht = ics->objects.xhts[id];
+	if (xht == NULL) {
+		IPC_ERROR(ics->server, "Hand tracker ID %u not found (NULL)", id);
+		return XRT_ERROR_IPC_FAILURE;
+	}
+
+	*out_xht = xht;
+
+	return XRT_SUCCESS;
+}
+
+xrt_result_t
+ipc_server_objects_get_xht_id_or_add(volatile struct ipc_client_state *ics,
+                                     struct xrt_hand_tracker *xht,
+                                     uint32_t *out_id)
+{
+	assert(out_id != NULL);
+	assert(xht != NULL);
+
+	for (uint32_t index = 0; index < IPC_MAX_CLIENT_HAND_TRACKERS; index++) {
+		if (ics->objects.xhts[index] == NULL) {
+			ics->objects.xhts[index] = xht;
+			*out_id = index;
+			return XRT_SUCCESS;
+		}
+	}
+
+	IPC_ERROR(ics->server, "Failed to find available slot for hand tracker");
+	return XRT_ERROR_IPC_FAILURE;
+}
+
+xrt_result_t
+ipc_server_objects_destroy_xht(volatile struct ipc_client_state *ics, uint32_t id)
+{
+	if (id >= IPC_MAX_CLIENT_HAND_TRACKERS) {
+		IPC_ERROR(ics->server, "Invalid hand tracker ID %u (>= IPC_MAX_CLIENT_HAND_TRACKERS)", id);
+		return XRT_ERROR_IPC_FAILURE;
+	}
+
+	if (ics->objects.xhts[id] == NULL) {
+		IPC_ERROR(ics->server, "Client tried to destroy non-existent hand tracker!");
+		return XRT_ERROR_IPC_FAILURE;
+	}
+
+	xrt_hand_tracker_destroy((struct xrt_hand_tracker **)&ics->objects.xhts[id]);
 
 	return XRT_SUCCESS;
 }

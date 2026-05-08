@@ -179,7 +179,10 @@ oxr_xrLocateHandJointsEXT(XrHandTrackerEXT handTracker,
 
 	if (data_source_state != NULL) {
 		OXR_VERIFY_ARG_TYPE_AND_NOT_NULL(&log, data_source_state, XR_TYPE_HAND_TRACKING_DATA_SOURCE_STATE_EXT);
-		OXR_VERIFY_ARG_NOT_ZERO(&log, hand_tracker->requested_sources_count);
+		if (!hand_tracker->has_requested_sources) {
+			return oxr_error(&log, XR_ERROR_VALIDATION_FAILURE,
+			                 "XrHandTracker was created without sources.");
+		}
 	}
 #endif
 

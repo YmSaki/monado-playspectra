@@ -12,6 +12,7 @@
 #include "xrt/xrt_results.h"
 
 struct xrt_space;
+struct xrt_hand_tracker;
 struct ipc_client_state;
 
 
@@ -124,3 +125,39 @@ ipc_server_objects_get_xspc_id_or_add(volatile struct ipc_client_state *ics, str
  */
 xrt_result_t
 ipc_server_objects_destroy_xspc(volatile struct ipc_client_state *ics, uint32_t id);
+
+
+/*
+ *
+ * Hand tracker functions.
+ *
+ */
+
+/*!
+ * Get a hand tracker by ID, must only be called from the per client thread.
+ *
+ * @ingroup ipc_server
+ */
+xrt_result_t
+ipc_server_objects_get_xht_and_validate(volatile struct ipc_client_state *ics,
+                                        uint32_t id,
+                                        struct xrt_hand_tracker **out_xht);
+
+/*!
+ * Track a newly created hand tracker and return its ID. Takes ownership of
+ * @p xht until explicit destroy or client disconnect.
+ *
+ * @ingroup ipc_server
+ */
+xrt_result_t
+ipc_server_objects_get_xht_id_or_add(volatile struct ipc_client_state *ics,
+                                     struct xrt_hand_tracker *xht,
+                                     uint32_t *out_id);
+
+/*!
+ * Destroy a tracked hand tracker.
+ *
+ * @ingroup ipc_server
+ */
+xrt_result_t
+ipc_server_objects_destroy_xht(volatile struct ipc_client_state *ics, uint32_t id);
