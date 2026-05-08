@@ -1161,6 +1161,9 @@ rift_add_to_constellation_tracker(struct rift_hmd *hmd, struct t_constellation_t
 		return ret;
 	}
 
+	struct xrt_tracking_origin *tracking_origin = t_constellation_tracker_get_tracking_origin(tracker);
+	hmd->base.tracking_origin = tracking_origin;
+
 	// Mark that we're using constellation poses now
 	hmd->use_constellation_poses = true;
 

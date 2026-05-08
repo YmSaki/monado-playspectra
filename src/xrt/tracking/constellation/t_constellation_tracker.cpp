@@ -887,3 +887,11 @@ t_constellation_tracker_remove_device(t_constellation_tracker *raw_tracker, t_co
 
 	return 0;
 }
+
+xrt_tracking_origin *
+t_constellation_tracker_get_tracking_origin(t_constellation_tracker *raw_tracker)
+{
+	ConstellationTracker *tracker = (ConstellationTracker *)raw_tracker;
+
+	return &tracker->tracking_origin;
+}

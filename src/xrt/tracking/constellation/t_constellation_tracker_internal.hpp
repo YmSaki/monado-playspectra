@@ -10,6 +10,7 @@
 #pragma once
 
 #include "xrt/xrt_frame.h"
+#include "xrt/xrt_tracking.h"
 
 #include "util/u_debug.h"
 #include "util/u_logging.h"
@@ -291,6 +292,11 @@ public: // Fields
 	    .next = nullptr,
 	    .break_apart = constellation_tracker_node_break_apart,
 	    .destroy = constellation_tracker_node_destroy,
+	};
+	xrt_tracking_origin tracking_origin = {
+	    .name = "Constellation Tracker",
+	    .type = XRT_TRACKING_TYPE_CONSTELLATION,
+	    .initial_offset = XRT_POSE_IDENTITY,
 	};
 
 	//! Whether the constellation tracker is running
