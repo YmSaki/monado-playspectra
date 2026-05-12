@@ -9,8 +9,12 @@
 
 #include "t_constellation_tracker_internal.hpp"
 
+#include <string>
+
 
 namespace xrt::tracking::constellation {
+
+DEBUG_GET_ONCE_LOG_OPTION(constellation_tracker_log, "CONSTELLATION_TRACKER_LOG", U_LOGGING_WARN)
 
 /*
  *
@@ -105,6 +109,9 @@ Camera::Camera(ConstellationTracker *tracker,
 	if (os_thread_helper_start(&this->fast_processing_thread, constellation_tracker_camera_fast_thread, this) < 0) {
 		throw std::runtime_error("Starting fast processing thread failed");
 	}
+
+	u_sink_debug_init(&this->slow_processing_thread_data.debug_sink);
+	u_sink_debug_init(&this->fast_processing_thread_data.debug_sink);
 }
 
 Camera::~Camera()
@@ -126,6 +133,9 @@ Camera::~Camera()
 		correspondence_search_free(this->fast_processing_thread_data.cs);
 		this->fast_processing_thread_data.cs = nullptr;
 	}
+
+	u_sink_debug_destroy(&this->slow_processing_thread_data.debug_sink);
+	u_sink_debug_destroy(&this->fast_processing_thread_data.debug_sink);
 }
 
 std::optional<xrt_pose>
@@ -166,7 +176,8 @@ Camera::TryDevicePose(std::unique_ptr<Device> &device,
                       CameraSample &sample,
                       xrt_pose &Tcv_cam_world,
                       xrt_pose &Tcv_world_device_prior,
-                      xrt_pose &Tcv_world_device_candidate)
+                      xrt_pose &Tcv_world_device_candidate,
+                      xrt_pose &Tcv_cam_device_found)
 {
 	xrt_pose Tcv_cam_device_prior;
 	math_pose_transform(&Tcv_cam_world, &Tcv_world_device_prior, &Tcv_cam_device_prior);
@@ -182,6 +193,7 @@ Camera::TryDevicePose(std::unique_ptr<Device> &device,
 
 	if (POSE_HAS_FLAGS(&score, POSE_MATCH_GOOD | POSE_MATCH_LED_IDS)) {
 		this->PushPose(sample, device, score, Tcv_cam_device_candidate, true);
+		Tcv_cam_device_found = Tcv_cam_device_candidate;
 		return true;
 	}
 
@@ -192,7 +204,8 @@ bool
 Camera::TryDeviceBlobRecovery(std::unique_ptr<Device> &device,
                               CameraSample &sample,
                               xrt_pose &Tcv_cam_world,
-                              xrt_pose &Tcv_world_device_prior)
+                              xrt_pose &Tcv_world_device_prior,
+                              xrt_pose &Tcv_cam_device_found)
 {
 	auto tracker = this->tracker;
 
@@ -234,6 +247,8 @@ Camera::TryDeviceBlobRecovery(std::unique_ptr<Device> &device,
 		CT_DEBUG(tracker, "Camera %p RANSAC-PnP recovered pose for device %d from %u blobs", (void *)this,
 		         device->id, sample.blob_count);
 		this->PushPose(sample, device, score, Tcv_cam_device, false);
+		Tcv_cam_device_found = Tcv_cam_device;
+
 		return true;
 	}
 
@@ -331,9 +346,12 @@ Camera::SlowSampleProcess(CameraSample &sample)
 			// We found a pose for this device in this sample
 			if (maybe_device_state.has_value()) {
 				maybe_device_state.value()->needs_slow_processing = false;
+				maybe_device_state.value()->Tcv_cam_device_found = Tcv_cam_device;
 			}
 		}
 	}
+
+	this->DebugScribbleSample(sample, false);
 }
 
 bool
@@ -387,10 +405,13 @@ Camera::FastSampleProcess(CameraSample &sample)
 		xrt_pose Tcv_world_device_predicted; //< AKA "the prior"
 		math_pose_convert_opencv(&device_predicted_relation.pose, &Tcv_world_device_predicted);
 
+		xrt_pose Tcv_cam_device_found;
+
 		// if we have a valid prior pose, try to use it for fast matching
 		if (prior_valid && this->TryDevicePose(device, sample, Tcv_cam_world, Tcv_world_device_predicted,
-		                                       Tcv_world_device_predicted)) {
+		                                       Tcv_world_device_predicted, Tcv_cam_device_found)) {
 			CT_DEBUG(tracker, "Fast processing for device %d succeeded", device->id);
+			device_state.Tcv_cam_device_found = Tcv_cam_device_found;
 
 			continue; // try the next device, we found a pose!
 		}
@@ -409,13 +430,18 @@ Camera::FastSampleProcess(CameraSample &sample)
 		}
 
 		if (has_last_known && this->TryDevicePose(device, sample, Tcv_cam_world, Tcv_world_device_predicted,
-		                                          Tcv_world_device_last_known)) {
+		                                          Tcv_world_device_last_known, Tcv_cam_device_found)) {
 			CT_DEBUG(tracker, "Fast processing for device %d succeeded with last known pose", device->id);
+			device_state.Tcv_cam_device_found = Tcv_cam_device_found;
+
 			continue; // try the next device, we found a pose!
 		}
 
-		if (this->TryDeviceBlobRecovery(device, sample, Tcv_cam_world, Tcv_world_device_predicted)) {
+		if (this->TryDeviceBlobRecovery(device, sample, Tcv_cam_world, Tcv_world_device_predicted,
+		                                Tcv_cam_device_found)) {
 			CT_DEBUG(tracker, "Fast processing for device %d succeeded with blob recovery", device->id);
+			device_state.Tcv_cam_device_found = Tcv_cam_device_found;
+
 			continue; // try the next device, we found a pose!
 		}
 
@@ -423,6 +449,8 @@ Camera::FastSampleProcess(CameraSample &sample)
 
 		need_full_search = true;
 	}
+
+	this->DebugScribbleSample(sample, true);
 
 	return need_full_search;
 }
@@ -626,6 +654,36 @@ ConstellationTracker::ConstellationTracker(t_constellation_tracker_params *param
 ConstellationTracker::~ConstellationTracker()
 {
 	CT_DEBUG(this, "Destroying constellation tracker");
+}
+
+void
+ConstellationTracker::SetupVariableTracking()
+{
+	u_var_add_root(this, "Constellation Tracker", true);
+	u_var_add_log_level(this, &this->log_level, "Log Level");
+
+	uint32_t mosaic_idx = 0;
+	for (auto &mosaic : this->mosaics) {
+		uint32_t camera_idx = 0;
+		for (auto &camera : mosaic->cameras) {
+			auto str =
+			    "Camera " + std::to_string(camera_idx) + " (Mosaic " + std::to_string(mosaic_idx) + ")";
+			u_var_add_gui_header(this, nullptr, str.c_str());
+
+			u_var_add_sink_debug(this, &camera->fast_processing_thread_data.debug_sink,
+			                     "Blob Debug Sink (Fast)");
+			u_var_add_sink_debug(this, &camera->slow_processing_thread_data.debug_sink,
+			                     "Blob Debug Sink (Slow)");
+
+			u_var_add_pose(this, &camera->locked_data.Txr_origin_cam, "Camera Origin Pose");
+			u_var_add_bool(this, &camera->locked_data.has_concrete_pose, "Has Concrete Pose");
+
+			camera->scribble_settings.SetupDebugTracking(this);
+
+			camera_idx++;
+		}
+		mosaic_idx++;
+	}
 }
 
 t_constellation_device_id_t
@@ -843,9 +901,7 @@ t_constellation_tracker_create(xrt_frame_context *xfctx,
 
 		*out_tracker = (t_constellation_tracker *)tracker;
 
-		// Setup debug variable tracking
-		u_var_add_root(tracker, "Constellation Tracker", true);
-		u_var_add_log_level(tracker, &tracker->log_level, "Log Level");
+		tracker->SetupVariableTracking();
 	} catch (const std::exception &e) {
 		U_LOG_E("Failed to create constellation tracker: %s", e.what());
 		return -1;

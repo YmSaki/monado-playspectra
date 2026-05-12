@@ -4,6 +4,7 @@
 add_library(
 	constellation STATIC
 	camera_model.h
+	constellation_debug_scribble.cpp
 	correspondence_search.c
 	correspondence_search.h
 	image_point_sort.cpp
@@ -33,6 +34,7 @@ target_link_libraries(
 		tracking-includes
 		aux_os
 		aux_util
+		aux_util_scribble
 		aux_math
 	)
 

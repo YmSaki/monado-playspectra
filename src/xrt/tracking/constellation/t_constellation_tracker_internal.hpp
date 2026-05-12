@@ -17,6 +17,9 @@
 #include "util/u_var.h"
 #include "util/u_threading.h"
 #include "util/u_weak_ptr.hpp"
+#include "util/u_sink.h"
+#include "util/u_frame.h"
+#include "util/u_frame_scribble.h"
 
 #include "tracking/t_constellation.h"
 
@@ -36,8 +39,6 @@
 #include "pose_metrics.h"
 #include "t_constellation_tracker.h"
 
-
-DEBUG_GET_ONCE_LOG_OPTION(constellation_tracker_log, "CONSTELLATION_TRACKER_LOG", U_LOGGING_WARN)
 
 #define CT_TRACE(ct, ...) U_LOG_IFL_T(ct->log_level, __VA_ARGS__)
 #define CT_DEBUG(ct, ...) U_LOG_IFL_D(ct->log_level, __VA_ARGS__)
@@ -91,6 +92,9 @@ struct DeviceState
 	//! The "predicted" pose, which is the pose the device expects itself to be at at the time of the blobservation.
 	std::optional<xrt_pose> Txr_world_device_prior{std::nullopt};
 
+	//! The final found pose of the device in this specific sample.
+	std::optional<xrt_pose> Tcv_cam_device_found{std::nullopt};
+
 	//! Whether the device needs to have the slow processing thread run over it
 	bool needs_slow_processing{false};
 };
@@ -136,6 +140,28 @@ public: // Methods
 	ToBlobObservation() const && = delete;
 };
 
+struct CameraScribbleSettings
+{
+public: // Fields
+	//! Whether to draw the blobs in the sample
+	bool draw_blobs{true};
+	//! Whether to draw the raw blob IDs
+	bool draw_blob_ids{false};
+	//! Whether to draw the device IDs on the blobs where possible
+	bool draw_blob_device_ids{true};
+	//! Whether to draw the LED IDs on the blobs where possible
+	bool draw_blob_led_ids{false};
+
+	//! Whether to draw the prior device pose in the sample, if it exists.
+	bool draw_prior{false};
+	//! Whether to draw the final device pose in the sample, if it exists.
+	bool draw_found{false};
+
+public: // Methods
+	void
+	SetupDebugTracking(void *root);
+};
+
 struct Camera
 {
 public: // Fields
@@ -152,13 +178,17 @@ public: // Fields
 
 	camera_model model;
 
+	CameraScribbleSettings scribble_settings{};
+
 	//! Does "slow" processing for this camera when fast recovery paths fail.
 	os_thread_helper slow_processing_thread;
 	struct
 	{
-		std::optional<CameraSample> sample;
+		std::optional<CameraSample> sample{std::nullopt};
 
-		correspondence_search *cs;
+		correspondence_search *cs{nullptr};
+
+		u_sink_debug debug_sink{};
 	} slow_processing_thread_data;
 
 	/*!
@@ -168,9 +198,11 @@ public: // Fields
 	os_thread_helper fast_processing_thread;
 	struct
 	{
-		std::optional<CameraSample> sample;
+		std::optional<CameraSample> sample{std::nullopt};
 
-		correspondence_search *cs;
+		correspondence_search *cs{nullptr};
+
+		u_sink_debug debug_sink{};
 	} fast_processing_thread_data;
 
 	//! Locks all processing data
@@ -182,7 +214,7 @@ public: // Fields
 		bool has_concrete_pose;
 	} locked_data;
 
-public: // Methods
+public: // Methods (t_constellation_tracker.cpp)
 	static Camera *
 	Get(t_blob_sink *tbs)
 	{
@@ -216,13 +248,15 @@ public: // Methods
 	              CameraSample &sample,
 	              xrt_pose &Tcv_cam_world,
 	              xrt_pose &Tcv_world_device_prior,
-	              xrt_pose &Tcv_world_device_candidate);
+	              xrt_pose &Tcv_world_device_candidate,
+	              xrt_pose &Tcv_cam_device_found);
 
 	bool
 	TryDeviceBlobRecovery(std::unique_ptr<Device> &device,
 	                      CameraSample &sample,
 	                      xrt_pose &Tcv_cam_world,
-	                      xrt_pose &Tcv_world_device_prior);
+	                      xrt_pose &Tcv_world_device_prior,
+	                      xrt_pose &Tcv_cam_device_found);
 
 	void
 	SlowSampleProcess(CameraSample &sample);
@@ -237,6 +271,10 @@ public: // Methods
 	         pose_metrics &score,
 	         xrt_pose &Tcv_cam_device,
 	         bool optimize);
+
+public: // Public (constellation_debug_scribble.cpp)
+	void
+	DebugScribbleSample(CameraSample &sample, bool fast);
 };
 
 struct CameraMosaic
@@ -330,6 +368,9 @@ public: // Methods
 	operator=(const ConstellationTracker &) = delete;
 	ConstellationTracker &
 	operator=(ConstellationTracker &&) = delete;
+
+	void
+	SetupVariableTracking();
 
 	t_constellation_device_id_t
 	AddDevice(t_constellation_tracker_device_params *params, t_constellation_tracker_device *device);
