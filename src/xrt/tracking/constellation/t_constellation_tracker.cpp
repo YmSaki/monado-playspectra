@@ -441,8 +441,11 @@ Camera::FastSampleProcess(CameraSample &sample)
 	std::shared_lock lock(tracker->device_lock);
 	for (std::unique_ptr<Device> &device : tracker->devices) {
 		xrt_space_relation device_predicted_relation = XRT_SPACE_RELATION_ZERO; //< AKA "the prior"
-		t_constellation_tracker_tracking_source_get_tracked_pose(
-		    device->params.tracking_source, sample.timestamp_ns, &device_predicted_relation);
+
+		if (device->params.tracking_source != nullptr) {
+			t_constellation_tracker_tracking_source_get_tracked_pose(
+			    device->params.tracking_source, sample.timestamp_ns, &device_predicted_relation);
+		}
 
 		std::optional<xrt_pose> Tcv_world_device_predicted = std::nullopt; //< AKA "the prior"
 
