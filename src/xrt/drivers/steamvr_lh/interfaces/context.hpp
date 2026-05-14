@@ -71,6 +71,7 @@ private:
 		vr::VREvent_t inner;
 	};
 	std::deque<Event> events;
+	size_t events_tail{0};
 	std::mutex event_queue_mut;
 
 	Device *
@@ -121,8 +122,8 @@ public:
 	       const std::string &steamvr_install,
 	       std::vector<vr::IServerTrackedDeviceProvider *> providers);
 
-	void
-	add_haptic_event(vr::VREvent_HapticVibration_t event);
+	size_t
+	add_haptic_event(vr::VREvent_HapticVibration_t event, size_t old_event_index);
 
 	void
 	add_vendor_event(vr::EVREventType type, const vr::VREvent_Data_t &data = {})

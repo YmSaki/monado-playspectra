@@ -865,7 +865,8 @@ ControllerDevice::set_output(xrt_output_name name, const xrt_output_value *value
 	event.fFrequency = frequency;
 	event.fAmplitude = vib.amplitude;
 
-	ctx->add_haptic_event(event);
+	// `latest_haptic_event` assumes single haptic component per device
+	this->latest_haptic_event = ctx->add_haptic_event(event, this->latest_haptic_event);
 	return XRT_SUCCESS;
 }
 

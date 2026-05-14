@@ -259,6 +259,7 @@ protected:
 
 private:
 	vr::VRInputComponentHandle_t haptic_handle{0};
+	size_t latest_haptic_event{0};
 	std::unique_ptr<xrt_output> output{nullptr};
 	bool has_hand_tracking{false};
 	xrt_hand skeleton_hand = XRT_HAND_LEFT;

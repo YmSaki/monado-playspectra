@@ -446,8 +446,8 @@ Context::IsExiting()
 	return false;
 }
 
-void
-Context::add_haptic_event(vr::VREvent_HapticVibration_t event)
+size_t
+Context::add_haptic_event(vr::VREvent_HapticVibration_t event, const size_t old_event_handle)
 {
 	vr::VREvent_t e;
 	e.eventType = vr::EVREventType::VREvent_Input_HapticVibration;
@@ -457,19 +457,30 @@ Context::add_haptic_event(vr::VREvent_HapticVibration_t event)
 	e.data = d;
 
 	std::lock_guard lk(event_queue_mut);
-	events.push_back({std::chrono::steady_clock::now(), e});
+	const size_t old_event_index = old_event_handle - events_tail;
+	if (old_event_index < size_t(events.size())) {
+		vr::VREvent_t *const old_event = &events[old_event_index].inner;
+		if (old_event->eventType == e.eventType &&
+		    old_event->data.hapticVibration.containerHandle == e.data.hapticVibration.containerHandle &&
+		    old_event->data.hapticVibration.componentHandle == e.data.hapticVibration.componentHandle) {
+			old_event->eventType = vr::EVREventType::VREvent_None;
+		}
+	}
+	events.emplace_back(std::chrono::steady_clock::now(), e);
+	return events_tail + events.size() - 1;
 }
 
 bool
 Context::PollNextEvent(vr::VREvent_t *pEvent, uint32_t uncbVREvent)
 {
-	if (!events.empty()) {
+	std::lock_guard lk(event_queue_mut);
+	while (!events.empty()) {
 		assert(sizeof(vr::VREvent_t) == uncbVREvent);
-		Event e;
-		{
-			std::lock_guard lk(event_queue_mut);
-			e = events.front();
-			events.pop_front();
+		Event e = events.front();
+		events.pop_front();
+		++events_tail;
+		if (e.inner.eventType == vr::EVREventType::VREvent_None) {
+			continue;
 		}
 		*pEvent = e.inner;
 		using float_sec = std::chrono::duration<float>;
