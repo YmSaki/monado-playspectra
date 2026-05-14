@@ -316,7 +316,7 @@ Device::Device(const DeviceBuilder &builder) : xrt_device({}), ctx(builder.ctx),
 	this->supported.battery_status = true;
 	this->supported.brightness_control = true;
 
-	this->xrt_device::update_inputs = &device_bouncer<Device, &Device::update_inputs, xrt_result_t>;
+	this->xrt_device::update_inputs = u_device_noop_update_inputs;
 #define SETUP_MEMBER_FUNC(name) this->xrt_device::name = &device_bouncer<Device, &Device::name>
 	SETUP_MEMBER_FUNC(get_tracked_pose);
 	SETUP_MEMBER_FUNC(get_battery_status);
@@ -652,14 +652,6 @@ ControllerDevice::set_haptic_handle(vr::VRInputComponentHandle_t handle)
 	output = std::make_unique<xrt_output>(xrt_output{name});
 	this->output_count = 1;
 	this->outputs = output.get();
-}
-
-xrt_result_t
-Device::update_inputs()
-{
-	std::lock_guard<std::mutex> lock(frame_mutex);
-	ctx->maybe_run_frame(++current_frame);
-	return XRT_SUCCESS;
 }
 
 xrt_result_t

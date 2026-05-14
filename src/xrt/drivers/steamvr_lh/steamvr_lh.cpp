@@ -41,7 +41,6 @@
 #include <string_view>
 #include <filesystem>
 #include <istream>
-#include <thread>
 
 namespace {
 
@@ -180,11 +179,24 @@ Context::create(const std::string &steam_install,
 }
 
 Context::Context(const std::string &steam_install, const std::string &steamvr_install, u_logging_level level)
-    : settings(steam_install, steamvr_install, this), resources(level, steamvr_install), log_level(level)
+    : settings(steam_install, steamvr_install, this), resources(level, steamvr_install), log_level(level), run(true),
+      frame_thread([this] {
+	      while (this->run.load()) {
+		      using namespace std::chrono_literals;
+		      // SteamVR calls `RunFrame()` approximately every 10.1ms
+		      const std::chrono::time_point<std::chrono::steady_clock> next =
+		          std::chrono::steady_clock::now() + 10ms;
+		      for (vr::IServerTrackedDeviceProvider *const &provider : this->providers)
+			      provider->RunFrame();
+		      std::this_thread::sleep_until(next);
+	      }
+      })
 {}
 
 Context::~Context()
 {
+	if (this->run.store(false); this->frame_thread.joinable())
+		this->frame_thread.join();
 	for (vr::IServerTrackedDeviceProvider *const &provider : providers)
 		provider->Cleanup();
 }
@@ -354,21 +366,6 @@ Context::setup_controller(const char *serial, vr::ITrackedDeviceServerDriver *dr
 	return true;
 }
 
-void
-Context::run_frame()
-{
-	for (vr::IServerTrackedDeviceProvider *const &provider : providers)
-		provider->RunFrame();
-}
-
-void
-Context::maybe_run_frame(uint64_t new_frame)
-{
-	if (new_frame > current_frame) {
-		++current_frame;
-		run_frame();
-	}
-}
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 bool
 Context::TrackedDeviceAdded(const char *pchDeviceSerialNumber,
@@ -971,14 +968,7 @@ steamvr_lh_create_devices(struct xrt_prober *xp, struct xrt_system_devices **out
 	// RunFrame needs to be called to detect controllers
 	using namespace std::chrono_literals;
 	auto end_time = std::chrono::steady_clock::now() + 1ms * debug_get_num_option_lh_discover_wait_ms();
-	while (true) {
-		svrs->ctx->run_frame();
-		auto cur_time = std::chrono::steady_clock::now();
-		if (cur_time > end_time) {
-			break;
-		}
-		std::this_thread::sleep_for(20ms);
-	}
+	std::this_thread::sleep_until(end_time);
 	U_LOG_IFL_I(level, "Device search time complete.");
 
 	if (out_xsysd == NULL || *out_xsysd != NULL) {

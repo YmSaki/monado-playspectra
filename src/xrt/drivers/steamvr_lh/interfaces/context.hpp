@@ -15,6 +15,7 @@
 #include <chrono>
 #include <deque>
 #include <mutex>
+#include <thread>
 
 #include "openvr_driver.h"
 
@@ -108,18 +109,17 @@ public:
 	class ControllerDevice *controller[16]{nullptr};
 	const u_logging_level log_level;
 
+private:
+	std::atomic<bool> run;
+	std::thread frame_thread;
+
+public:
 	~Context();
 
 	[[nodiscard]] static std::shared_ptr<Context>
 	create(const std::string &steam_install,
 	       const std::string &steamvr_install,
 	       std::vector<vr::IServerTrackedDeviceProvider *> providers);
-
-	void
-	run_frame();
-
-	void
-	maybe_run_frame(uint64_t new_frame);
 
 	void
 	add_haptic_event(vr::VREvent_HapticVibration_t event);

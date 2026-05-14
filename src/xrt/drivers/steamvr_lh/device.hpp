@@ -75,9 +75,6 @@ public:
 	xrt_input *
 	get_input_from_name(std::string_view name);
 
-	xrt_result_t
-	update_inputs();
-
 	void
 	update_pose(const vr::DriverPose_t &newPose) const;
 
@@ -124,9 +121,6 @@ protected:
 
 private:
 	vr::ITrackedDeviceServerDriver *driver;
-	uint64_t current_frame{0};
-
-	std::mutex frame_mutex;
 
 	void
 	init_chaperone(const std::string &steam_install);
