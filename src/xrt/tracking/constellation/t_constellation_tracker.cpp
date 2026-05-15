@@ -24,14 +24,17 @@ DEBUG_GET_ONCE_OPTION(constellation_tracker_data_recorder_output, "CONSTELLATION
  *
  */
 
+//! Gets the gravity vector of a pose, in the pose's local frame.
 static void
-get_pose_gravity_vector(xrt_pose &pose, xrt_vec3 &gravity)
+get_pose_gravity_vector(xrt_pose &T_world_pose, xrt_vec3 &gravity)
 {
 	// Extract the gravity vector from the pose's orientation
-	gravity.x = 0.0f;
-	gravity.y = 1.0f;
-	gravity.z = 0.0f;
-	math_quat_rotate_vec3(&pose.orientation, &gravity, &gravity);
+	gravity = XRT_VEC3_UNIT_Y;
+
+	xrt_quat T_pose_world_orientation;
+	math_quat_invert(&T_world_pose.orientation, &T_pose_world_orientation);
+
+	math_quat_rotate_vec3(&T_pose_world_orientation, &gravity, &gravity);
 }
 
 /*
@@ -377,15 +380,21 @@ Camera::SlowSampleProcess(CameraSample &sample)
 			}
 		}
 
-		xrt_vec3 camera_gravity_vector = {0.0, 1.0, 0.0};
-		if ((search_flags & CS_FLAG_HAVE_POSE_PRIOR) != 0) {
-			std::unique_lock<os::Mutex> lock(this->processing_lock);
+		// Arbitrary threshold to prevent trusting a gravity vector if the device itself isn't confident in it's
+		// own gravity.
+		const float gravity_error_threshold_deg = 25.f;
 
+		xrt_vec3 cv_camera_gravity_vector = {0.0, 1.0, 0.0};
+		if ((search_flags & CS_FLAG_HAVE_POSE_PRIOR) != 0 &&
+		    device->gravity_error_rad < DEG_TO_RAD(gravity_error_threshold_deg)) {
 			// If we have a pose for the camera and we have a prior pose
 			// (required by correspondence for search gravity matching)
 			if (Txr_world_cam.has_value()) {
+				xrt_pose Tcv_world_cam;
+				math_pose_convert_opencv(&Txr_world_cam.value(), &Tcv_world_cam);
+
 				// Acquire the camera's gravity vector under the processing lock
-				get_pose_gravity_vector(Txr_world_cam.value(), camera_gravity_vector);
+				get_pose_gravity_vector(Tcv_world_cam, cv_camera_gravity_vector);
 
 				// Add in to check gravity
 				search_flags = (correspondence_search_flags)(search_flags | CS_FLAG_MATCH_GRAVITY);
@@ -400,7 +409,7 @@ Camera::SlowSampleProcess(CameraSample &sample)
 		    &Tcv_cam_device,                                   //
 		    &device->prior_pos_error,                          //
 		    &device->prior_rot_error,                          //
-		    &camera_gravity_vector,                            //
+		    &cv_camera_gravity_vector,                         //
 		    device->gravity_error_rad,                         //
 		    &score);                                           //
 		if (found_pose) {
@@ -441,9 +450,6 @@ Camera::FastSampleProcess(CameraSample &sample)
 
 	xrt_pose Tcv_cam_world;
 	math_pose_invert(&Tcv_world_cam, &Tcv_cam_world);
-
-	xrt_vec3 gravity_vector;
-	get_pose_gravity_vector(Txr_world_cam.value(), gravity_vector);
 
 	bool need_full_search = false;
 	std::shared_lock lock(tracker->device_lock);

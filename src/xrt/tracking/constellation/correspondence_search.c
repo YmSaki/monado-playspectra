@@ -71,6 +71,7 @@
 #define CS_WARN(cs, ...) U_LOG_IFL_W((*((cs)->ct_log_level)), __VA_ARGS__)
 #define CS_ERROR(cs, ...) U_LOG_IFL_E((*((cs)->ct_log_level)), __VA_ARGS__)
 
+// @note These should never be upstreamed while set to 1, these are purely for very verbose debugging.
 #define DUMP_SCENE 0
 #define DUMP_BLOBS 0
 #define DUMP_FULL_DEBUG 0
@@ -879,12 +880,13 @@ correspondence_search_find_one_pose(struct correspondence_search *cs,
 		search_flags |= CS_FLAG_SHALLOW_SEARCH | CS_FLAG_DEEP_SEARCH;
 	}
 
-	struct cs_model_info mi;
-
-	mi.id = model->device_id;
-	mi.model = model;
-	mi.search_flags = search_flags;
-	mi.match_flags = 0;
+	struct cs_model_info mi = {
+	    .id = model->device_id,
+	    .model = model,
+	    .best_pose = XRT_POSE_IDENTITY,
+	    .match_flags = 0,
+	    .search_flags = search_flags,
+	};
 
 	if (search_flags & CS_FLAG_HAVE_POSE_PRIOR) {
 		assert(pos_error_thresh != NULL);

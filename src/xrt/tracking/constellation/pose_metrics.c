@@ -304,7 +304,7 @@ pose_metrics_match_pose_to_blobs(const struct xrt_pose *pose,
 		t_constellation_device_id_t led_object_id = b->matched_device_id;
 
 		// Skip blobs which already have an ID not belonging to this device
-		if (led_object_id != XRT_CONSTELLATION_INVALID_LED_ID && led_object_id != device_id) {
+		if (led_object_id != XRT_CONSTELLATION_INVALID_DEVICE_ID && led_object_id != device_id) {
 			continue;
 		}
 
