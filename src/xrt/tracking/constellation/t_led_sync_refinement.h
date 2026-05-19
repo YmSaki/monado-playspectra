@@ -25,6 +25,8 @@
 enum t_led_sync_refinement_flags
 {
 	T_LED_SYNC_REFINEMENT_FLAGS_NONE = 0,
+	//! Whether to try to optimize the blink duration after finding an offset, to lessen power usage.
+	T_LED_SYNC_REFINEMENT_FLAGS_BLINK_DURATION = 1 << 0,
 };
 
 //! Options for the LED sync refinement.
@@ -69,8 +71,10 @@ enum t_led_sync_phase
 	T_LED_SYNC_SEARCH_PHASE_FIND_RIGHT_EDGE = 2,
 	//! Trying to align the falling edge of the LED blinks with the rising edge of the camera exposure.
 	T_LED_SYNC_SEARCH_PHASE_FIND_LEFT_EDGE = 3,
+	//! We've found an offset, now we can optimize the blink duration to something that keeps it tracking.
+	T_LED_SYNC_SEARCH_PHASE_REFINE_BLINK_DURATION = 4,
 	//! We've found an offset and optimized the center of the LED blink to the center of the exposure.
-	T_LED_SYNC_SEARCH_PHASE_MAINTAIN_OFFSET = 4,
+	T_LED_SYNC_SEARCH_PHASE_MAINTAIN_OFFSET = 5,
 };
 
 struct t_led_sync_refinement
@@ -141,6 +145,15 @@ struct t_led_sync_refinement
 		//! The current right bound of the binary search, if we're in a find edge phase.
 		time_duration_ns right_bound_ns;
 	} binary_search_state;
+
+	struct
+	{
+		//! The last blink duration that didn't cause the device to become unstable.
+		time_duration_ns last_good_blink_duration_ns;
+
+		//! Whether we're currently trying to back off a lower blink duration.
+		bool backing_off;
+	} blink_time_refinement_state;
 };
 
 int
@@ -163,3 +176,6 @@ t_led_sync_get_sample(struct t_led_sync_refinement *refinement, struct t_led_syn
 
 void
 t_led_sync_mark_latest_sample_applied(struct t_led_sync_refinement *refinement, timepoint_ns apply_time_ns);
+
+void
+t_led_sync_update_minimum_blink_time(struct t_led_sync_refinement *refinement, time_duration_ns new_minimum_ns);

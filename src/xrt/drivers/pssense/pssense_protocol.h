@@ -30,6 +30,8 @@
 #define DURATION_NS_TO_PERIOD_ID(duration_ns) (uint8_t)(((NS_TO_IMU_TICKS(duration_ns + 1) - 1250) / 150LLU) & 0xFF)
 // clang-format on
 
+#define STABLE_MIN_PERIOD_ID 20
+
 #define MIN_PERIOD_ID 1
 #define MAX_PERIOD_ID 42
 

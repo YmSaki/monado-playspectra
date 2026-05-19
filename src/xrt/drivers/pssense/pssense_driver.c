@@ -227,6 +227,8 @@ struct pssense_device
 		uint64_t device_ticks_total;
 
 		uint32_t last_sent_host_timestamp_us;
+
+		time_duration_ns smoothed_clock_jitter_ns;
 	} timing;
 
 	struct
@@ -982,21 +984,26 @@ pssense_timing_event_sink_push(struct t_timing_event_sink *sink, const struct t_
 
 	// update the LED settings
 	if (pssense->tracking.received_frames > 10 && pssense->timing.has_clock_offset) {
-		uint8_t period_id = pssense->tracking.period_id;
-
 		// Update the sample from the LED sync routine
 		if (t_led_sync_get_sample(&pssense->tracking.led_sync_refinement,
 		                          &pssense->tracking.latest_led_sync_sample)) {
 			pssense->tracking.led_sync_sample_needs_sending = true;
-			period_id =
+			pssense->tracking.period_id =
 			    DURATION_NS_TO_PERIOD_ID(pssense->tracking.latest_led_sync_sample.blink_duration_ns);
 			pssense->tracking.led_sequence_num += 1;
 		}
 
+		uint8_t period_id = pssense->tracking.period_id;
+
+		// We don't need the = 0 in theory but the assert going away in release confuses the compiler. It will
+		// always be initialized.
+		timepoint_ns next_blink_time = 0;
 		// Convert the timestamp, latency offset will be applied within here
-		timepoint_ns next_blink_time;
-		assert(pssense_host_ts_to_device(pssense, pssense->tracking.last_exposure_local_timestamp_ns,
-		                                 &next_blink_time));
+		bool ts_valid = pssense_host_ts_to_device(pssense, pssense->tracking.last_exposure_local_timestamp_ns,
+		                                          &next_blink_time);
+		// We check if we have a clock offset above, so this will always return true
+		assert(ts_valid);
+		(void)ts_valid; // Silence unused variable in release
 
 		next_blink_time += (int64_t)pssense->tracking.timing_fudge_100us * 100 * U_TIME_1US_IN_NS;
 		// Apply the fudge offset, which will line up the blink center with exposure center'
@@ -1011,12 +1018,27 @@ pssense_timing_event_sink_push(struct t_timing_event_sink *sink, const struct t_
 		// in IMU ticks
 		uint32_t cycle_position = NS_TO_IMU_TICKS(next_blink_time);
 
+		uint32_t last_cycle_position = __le32_to_cpu(pssense->tracking.led_settings.cycle_position);
+		if (cycle_position != last_cycle_position) {
+			int64_t jitter = (IMU_TICKS_TO_NS(((int64_t)cycle_position - last_cycle_position))) -
+			                 (int64_t)pssense->tracking.average_exposure_interval_ns;
+
+			if (jitter < (U_TIME_1MS_IN_NS * 3LL) && jitter > -(U_TIME_1MS_IN_NS * 3LL)) {
+				pssense->timing.smoothed_clock_jitter_ns =
+				    ((pssense->timing.smoothed_clock_jitter_ns * 0.9) + (abs((int)jitter) * 0.1));
+
+				time_duration_ns new_minimum_blink_time =
+				    PERIOD_ID_TO_DURATION_NS(STABLE_MIN_PERIOD_ID) +
+				    (int64_t)(pssense->timing.smoothed_clock_jitter_ns * 2);
+
+				t_led_sync_update_minimum_blink_time(&pssense->tracking.led_sync_refinement,
+				                                     new_minimum_blink_time);
+			}
+		}
+
 #if 0
 		static int64_t jitter_integration = 0;
 
-		int64_t jitter =
-		    (IMU_TICKS_TO_NS(((int64_t)cycle_position - pssense->tracking.led_settings.cycle_position))) -
-		    (int64_t)pssense->tracking.average_exposure_interval_ns;
 		PSSENSE_DEBUG(pssense, "(blink length %uus) drift %ldus",
 		              (uint32_t)(IMU_TICKS_TO_NS(150LLU * 32 + 1250) / 1000), jitter_integration / 1000);
 		jitter_integration += jitter;
@@ -1490,9 +1512,9 @@ pssense_create(struct xrt_prober *xp,
 
 	pssense->tracking.period_id = 32;
 	struct t_led_sync_refinement_options led_sync_refinement_options = {
-	    .flags = T_LED_SYNC_REFINEMENT_FLAGS_NONE,
+	    .flags = T_LED_SYNC_REFINEMENT_FLAGS_BLINK_DURATION,
 	    .initial_blink_duration_ns = PERIOD_ID_TO_DURATION_NS(pssense->tracking.period_id),
-	    .min_blink_duration_ns = PERIOD_ID_TO_DURATION_NS(MIN_PERIOD_ID),
+	    .min_blink_duration_ns = PERIOD_ID_TO_DURATION_NS(STABLE_MIN_PERIOD_ID),
 	    .max_blink_duration_ns = PERIOD_ID_TO_DURATION_NS(MAX_PERIOD_ID),
 	    .time_to_resync_ns = T_LED_SYNC_DEFAULT_RESYNC_TIME,
 	    .settle_frames = 10,
@@ -1562,6 +1584,7 @@ pssense_create(struct xrt_prober *xp,
 	u_var_add_ro_u64(pssense, &pssense->timing.imu_ticks_total, "Latest IMU Time (ticks)");
 	u_var_add_ro_i64_ns(pssense, &pssense->timing.latest_device_time_ns, "Latest Device Time (ns)");
 	u_var_add_ro_u64(pssense, &pssense->timing.device_ticks_total, "Latest Device Time (ticks)");
+	u_var_add_ro_i64_ns(pssense, &pssense->timing.smoothed_clock_jitter_ns, "Smoothed Clock Jitter (ns)");
 
 	u_var_add_gui_header(pssense, &pssense->gui.tracking, "Tracking");
 	u_var_add_ro_vec3_i32(pssense, &pssense->state.gyro_raw, "Raw Gyro");
@@ -1575,6 +1598,7 @@ pssense_create(struct xrt_prober *xp,
 	u_var_add_ro_i64_ns(pssense, &pssense->tracking.average_exposure_interval_ns, "Average Exposure Interval (ns)");
 	u_var_add_bool(pssense, &pssense->tracking.increment_sequence_num, "Increment LED Sequence Number");
 	u_var_add_u8(pssense, &pssense->tracking.led_sequence_num, "LED Sequence Number");
+	u_var_add_u8(pssense, &pssense->tracking.period_id, "LED Blink Period ID");
 	u_var_add_i32(pssense, &pssense->tracking.timing_fudge_100us, "Timing Fudge (100us)");
 	u_var_add_bool(pssense, &pssense->tracking.use_constellation, "Use Constellation Tracking");
 

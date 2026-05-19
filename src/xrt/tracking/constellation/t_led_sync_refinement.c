@@ -69,6 +69,21 @@ set_offset_duration(struct t_led_sync_refinement *refinement,
 	          latency_offset_ns, fudge_offset_ns, blink_duration_ns);
 }
 
+static void
+set_centered_duration(struct t_led_sync_refinement *refinement, time_duration_ns blink_duration_ns)
+{
+	// Find the latency offset, the offset needing to be applied to get blink start to line up with exposure
+	// start, this is the transfer latency from the controller->host.
+	time_duration_ns new_latency_offset_ns = refinement->found_left_edge_ns;
+
+	// Set the offset so that the center of the blink is at the center of the exposure, since latency and
+	// fudge offset are added together
+	time_duration_ns new_offset_ns =
+	    ((refinement->found_right_edge_ns - refinement->found_left_edge_ns) / 2) - (blink_duration_ns / 2);
+
+	set_offset_duration(refinement, new_latency_offset_ns, new_offset_ns, blink_duration_ns);
+}
+
 //! Gets the period to iterate over when searching for a latency offset.
 static time_duration_ns
 get_search_period_locked(struct t_led_sync_refinement *refinement)
@@ -99,6 +114,8 @@ set_phase_locked(struct t_led_sync_refinement *refinement, enum t_led_sync_phase
 	case T_LED_SYNC_SEARCH_PHASE_FIND_INITIAL_OFFSET: {
 		refinement->found_left_edge_ns = -1;
 		refinement->found_right_edge_ns = -1;
+
+		refinement->current_blink_duration_ns = refinement->options.initial_blink_duration_ns;
 
 		set_offset_duration(refinement, 0, 0, refinement->current_blink_duration_ns);
 		break;
@@ -143,23 +160,25 @@ set_phase_locked(struct t_led_sync_refinement *refinement, enum t_led_sync_phase
 
 		break;
 	}
+	case T_LED_SYNC_SEARCH_PHASE_REFINE_BLINK_DURATION: {
+		// We should have both edges by now
+		assert(refinement->found_right_edge_ns > -1);
+		assert(refinement->found_left_edge_ns > -1);
+
+		set_centered_duration(refinement, refinement->current_blink_duration_ns);
+
+		refinement->blink_time_refinement_state.backing_off = false;
+		refinement->blink_time_refinement_state.last_good_blink_duration_ns =
+		    refinement->current_blink_duration_ns;
+
+		break;
+	}
 	case T_LED_SYNC_SEARCH_PHASE_MAINTAIN_OFFSET: {
 		// We should have both edges by now
 		assert(refinement->found_right_edge_ns > -1);
 		assert(refinement->found_left_edge_ns > -1);
 
-		// Find the latency offset, the offset needing to be applied to get blink start to line up with exposure
-		// start, this is the transfer latency from the controller->host.
-		time_duration_ns new_latency_offset_ns = refinement->found_left_edge_ns;
-
-		// Set the offset so that the center of the blink is at the center of the exposure, since latency and
-		// fudge offset are added together
-		time_duration_ns new_offset_ns =
-		    ((refinement->found_right_edge_ns - refinement->found_left_edge_ns) / 2) -
-		    (refinement->current_blink_duration_ns / 2);
-
-		set_offset_duration(refinement, new_latency_offset_ns, new_offset_ns,
-		                    refinement->current_blink_duration_ns);
+		set_centered_duration(refinement, refinement->current_blink_duration_ns);
 
 		LOG_DEBUG(refinement, "Maintaining offset at: %" PRId64 "ns", refinement->current_latency_offset_ns);
 
@@ -288,7 +307,78 @@ handle_find_left_edge(struct t_led_sync_refinement *refinement)
 		              refinement->binary_search_state.left_bound_ns,
 		          change_good_cutoff(refinement));
 
-		set_phase_locked(refinement, T_LED_SYNC_SEARCH_PHASE_MAINTAIN_OFFSET);
+		// We've found the latency offset, so if we're not optimizing blink duration, we can move to just
+		// maintaining the offset now.
+		if (refinement->options.flags & T_LED_SYNC_REFINEMENT_FLAGS_BLINK_DURATION) {
+			set_phase_locked(refinement, T_LED_SYNC_SEARCH_PHASE_REFINE_BLINK_DURATION);
+		} else {
+			set_phase_locked(refinement, T_LED_SYNC_SEARCH_PHASE_MAINTAIN_OFFSET);
+		}
+	}
+}
+
+static void
+handle_refine_blink_duration(struct t_led_sync_refinement *refinement)
+{
+	if (refinement->frames_since_last_visually_seen > MAX_SAMPLE_LATENCY) {
+		LOG_DEBUG(refinement, "Device hasn't been seen for %" PRIu32 " frames, trying shorter blink duration",
+		          refinement->frames_since_last_visually_seen);
+
+		if (refinement->blink_time_refinement_state.backing_off) {
+			// Backing off still didn't work, just go back to the start and hope for the best.
+			time_duration_ns new_blink_duration = refinement->options.initial_blink_duration_ns;
+			set_centered_duration(refinement, new_blink_duration);
+
+			LOG_DEBUG(refinement,
+			          "Backing off didn't work, resetting blink duration to initial value: %" PRId64 "ns",
+			          new_blink_duration);
+
+			set_phase_locked(refinement, T_LED_SYNC_SEARCH_PHASE_MAINTAIN_OFFSET);
+			return;
+		}
+
+		// We didn't see the device, try increasing the blink duration again to back off
+		time_duration_ns new_blink_duration =
+		    refinement->blink_time_refinement_state.last_good_blink_duration_ns;
+
+		set_centered_duration(refinement, new_blink_duration);
+		refinement->blink_time_refinement_state.backing_off = true;
+
+		LOG_DEBUG(refinement, "Trying to back off to last good blink duration: %" PRId64 "ns",
+		          new_blink_duration);
+	} else {
+		if (refinement->blink_time_refinement_state.backing_off) {
+			// We backed off and it worked, so now we found the minimum blink duration that doesn't cause
+			// instability, we can stop refining.
+			LOG_DEBUG(refinement,
+			          "Back off worked, found good blink duration: %" PRId64 "ns, stopping refinement",
+			          refinement->current_blink_duration_ns);
+			set_phase_locked(refinement, T_LED_SYNC_SEARCH_PHASE_MAINTAIN_OFFSET);
+			return;
+		}
+
+		time_duration_ns search_period_ns = get_search_period_locked(refinement);
+		time_duration_ns new_blink_duration_ns = refinement->current_blink_duration_ns - search_period_ns;
+
+		// We saw the device, this is a good blink duration, save it in case we need to back off.
+		refinement->blink_time_refinement_state.last_good_blink_duration_ns =
+		    refinement->current_blink_duration_ns;
+		refinement->blink_time_refinement_state.backing_off = false;
+
+		LOG_DEBUG(refinement,
+		          "Device has been seen, trying shorter blink duration: %" PRId64 "ns (was %" PRId64 "ns)",
+		          new_blink_duration_ns, refinement->current_blink_duration_ns);
+
+		if (new_blink_duration_ns < refinement->options.min_blink_duration_ns) {
+			LOG_DEBUG(refinement,
+			          "New blink duration %" PRId64 "ns was below minimum blink duration %" PRId64
+			          "ns, stopping refinement",
+			          new_blink_duration_ns, refinement->options.min_blink_duration_ns);
+			set_phase_locked(refinement, T_LED_SYNC_SEARCH_PHASE_MAINTAIN_OFFSET);
+			return;
+		}
+
+		set_centered_duration(refinement, new_blink_duration_ns);
 	}
 }
 
@@ -351,6 +441,10 @@ handle_timing_event_locked(struct t_led_sync_refinement *refinement,
 	}
 	case T_LED_SYNC_SEARCH_PHASE_FIND_LEFT_EDGE: {
 		handle_find_left_edge(refinement);
+		break;
+	}
+	case T_LED_SYNC_SEARCH_PHASE_REFINE_BLINK_DURATION: {
+		handle_refine_blink_duration(refinement);
 		break;
 	}
 	case T_LED_SYNC_SEARCH_PHASE_MAINTAIN_OFFSET: {
@@ -430,6 +524,10 @@ t_led_sync_refinement_init(struct t_led_sync_refinement *refinement,
 	u_var_add_gui_header(refinement, NULL, "Options");
 	u_var_add_ro_i32(refinement, (int32_t *)&refinement->options.flags, "flags");
 	u_var_add_ro_i64_ns(refinement, &refinement->options.initial_blink_duration_ns, "initial_blink_duration_ns");
+	u_var_add_ro_i64_ns(refinement, &refinement->options.min_blink_duration_ns, "min_blink_duration_ns");
+	u_var_add_ro_i64_ns(refinement, &refinement->options.max_blink_duration_ns, "max_blink_duration_ns");
+	u_var_add_ro_i64_ns(refinement, &refinement->options.time_to_resync_ns, "time_to_resync_ns");
+	u_var_add_ro_u32(refinement, &refinement->options.settle_frames, "settle_frames");
 
 	u_var_add_gui_header(refinement, NULL, "Exposure Info");
 	u_var_add_bool(refinement, &refinement->has_exposure_time, "Has Exposure Time");
@@ -518,5 +616,27 @@ t_led_sync_mark_latest_sample_applied(struct t_led_sync_refinement *refinement, 
 	os_mutex_lock(&refinement->lock);
 	refinement->sample_applied = true;
 	refinement->last_sample_apply_time_ns = apply_time_ns;
+	os_mutex_unlock(&refinement->lock);
+}
+
+void
+t_led_sync_update_minimum_blink_time(struct t_led_sync_refinement *refinement, time_duration_ns new_minimum_ns)
+{
+	assert(refinement->initialized);
+
+	os_mutex_lock(&refinement->lock);
+	{
+		refinement->options.min_blink_duration_ns = new_minimum_ns;
+		LOG_TRACE(refinement, "Updated minimum blink duration to: %" PRId64 "ns", new_minimum_ns);
+
+		if (refinement->current_blink_duration_ns < refinement->options.min_blink_duration_ns) {
+			set_offset_duration(refinement, refinement->current_latency_offset_ns,
+			                    refinement->current_blink_fudge_ns,
+			                    refinement->options.min_blink_duration_ns);
+
+			LOG_DEBUG(refinement, "Current blink duration was below minimum, updated to: %" PRId64 "ns",
+			          refinement->options.min_blink_duration_ns);
+		}
+	}
 	os_mutex_unlock(&refinement->lock);
 }
