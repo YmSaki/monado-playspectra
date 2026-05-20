@@ -19,10 +19,10 @@ struct layer_data
 {
 	uint layer_type;
 	uint unpremultiplied_alpha;
+	uint inverted_alpha;
 
 	// This struct is used in an array, gets padded to vec4.
 	uint _padding0;
-	uint _padding1;
 };
 
 struct image_info
@@ -152,6 +152,15 @@ vec4 apply_chroma_key(vec4 color, uint layer)
 
 	// Pre-multiply RGB by the chroma alpha
 	return vec4(color.rgb * chroma_alpha, color.a * chroma_alpha);
+}
+
+float invert_alpha(float alpha, uint layer)
+{
+	if (LAYER.layer_data.inverted_alpha != 0) {
+		alpha = 1.0 - alpha;
+	}
+
+	return alpha;
 }
 
 vec2 position_to_view_uv(ivec2 extent, uint ix, uint iy)
@@ -526,6 +535,9 @@ vec4 do_quad(vec2 view_uv, uint layer)
 		return colour;
 	}
 
+	// Only invert alpha if we have a color, i.e. in plane bounds.
+	colour.a = invert_alpha(colour.a, layer);
+
 	return vec4(colour);
 }
 
@@ -540,15 +552,19 @@ vec4 do_layers(vec2 view_uv)
 		switch (LAYER.layer_data.layer_type) {
 		case LAYER_COMP_TYPE_QUAD:
 			rgba = do_quad(view_uv, layer);
+			// Quad alpha inversion is done inside
 			break;
 		case LAYER_COMP_TYPE_CYLINDER:
 			rgba = do_cylinder(view_uv, layer);
+			rgba.a = invert_alpha(rgba.a, layer);
 			break;
 		case LAYER_COMP_TYPE_EQUIRECT2:
 			rgba = do_equirect2(view_uv, layer);
+			rgba.a = invert_alpha(rgba.a, layer);
 			break;
 		case LAYER_COMP_TYPE_PROJECTION:
 			rgba = do_projection(view_uv, layer);
+			rgba.a = invert_alpha(rgba.a, layer);
 			rgba = apply_chroma_key(rgba, layer);
 			break;
 		default: break;

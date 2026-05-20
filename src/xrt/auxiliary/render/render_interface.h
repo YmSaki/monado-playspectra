@@ -1258,8 +1258,8 @@ struct render_compute_layer_ubo_data
 		{
 			uint32_t layer_type;
 			uint32_t unpremultiplied_alpha;
+			uint32_t inverted_alpha;
 			uint32_t _padding0;
-			uint32_t _padding1;
 		} layer_data;
 
 		/*!

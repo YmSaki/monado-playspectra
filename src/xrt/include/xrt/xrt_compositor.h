@@ -131,6 +131,12 @@ enum xrt_layer_composition_flags
 	 * see XrCompositionLayerDepthTestFB.
 	 */
 	XRT_LAYER_COMPOSITION_DEPTH_TEST = 1u << 10u,
+
+	/*!
+	 * This layer has inverted alpha,
+	 * see @p XR_COMPOSITION_LAYER_INVERTED_ALPHA_BIT_EXT
+	 */
+	XRT_LAYER_COMPOSITION_INVERTED_ALPHA_BIT = 1u << 11u,
 };
 
 /*!
