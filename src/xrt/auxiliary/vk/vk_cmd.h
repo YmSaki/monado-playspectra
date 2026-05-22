@@ -64,6 +64,21 @@ struct vk_cmd_copy_image_info
 };
 
 /*!
+ * Structure defining the parameters for a blit operation, sans the image itself.
+ *
+ * See @ref vk_cmd_blit_image_info for usage.
+ *
+ * @ingroup aux_vk
+ */
+struct vk_cmd_blit_image_params
+{
+	VkImageLayout layout;
+	VkAccessFlags access_mask;
+	VkPipelineStageFlags stage_mask;
+	struct xrt_rect rect;
+};
+
+/*!
  * Argument struct for @ref vk_cmd_blit_image_locked.
  *
  * See @ref vk_cmd_first_mip_image for array and mip selection rules.
@@ -74,18 +89,12 @@ struct vk_cmd_blit_image_info
 {
 	struct
 	{
-		VkImageLayout old_layout;
-		VkAccessFlags src_access_mask;
-		VkPipelineStageFlags src_stage_mask;
-		struct xrt_rect rect;
+		struct vk_cmd_blit_image_params params;
 		struct vk_cmd_first_mip_image fm_image;
 	} src;
 	struct
 	{
-		VkImageLayout old_layout;
-		VkAccessFlags src_access_mask;
-		VkPipelineStageFlags src_stage_mask;
-		struct xrt_rect rect;
+		struct vk_cmd_blit_image_params params;
 		struct vk_cmd_first_mip_image fm_image;
 	} dst;
 };

@@ -270,15 +270,15 @@ void
 vk_cmd_blit_image_locked(struct vk_bundle *vk, VkCommandBuffer cmd_buffer, const struct vk_cmd_blit_image_info *info)
 {
 	VkPipelineStageFlags src_stage_mask = 0;
-	src_stage_mask |= info->src.src_stage_mask;
-	src_stage_mask |= info->dst.src_stage_mask;
+	src_stage_mask |= info->src.params.stage_mask;
+	src_stage_mask |= info->dst.params.stage_mask;
 
 	VkImageMemoryBarrier barriers[2] = {
 	    {
 	        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-	        .srcAccessMask = info->src.src_access_mask,
+	        .srcAccessMask = info->src.params.access_mask,
 	        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-	        .oldLayout = info->src.old_layout,
+	        .oldLayout = info->src.params.layout,
 	        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 	        .image = info->src.fm_image.image,
 	        .subresourceRange =
@@ -292,9 +292,9 @@ vk_cmd_blit_image_locked(struct vk_bundle *vk, VkCommandBuffer cmd_buffer, const
 	    },
 	    {
 	        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-	        .srcAccessMask = info->dst.src_access_mask,
+	        .srcAccessMask = info->dst.params.access_mask,
 	        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-	        .oldLayout = info->dst.old_layout,
+	        .oldLayout = info->dst.params.layout,
 	        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 	        .image = info->dst.fm_image.image,
 	        .subresourceRange =
@@ -336,15 +336,15 @@ vk_cmd_blit_image_locked(struct vk_bundle *vk, VkCommandBuffer cmd_buffer, const
 	    .layerCount = 1,
 	};
 
-	int src_w1 = info->src.rect.offset.w;
-	int src_h1 = info->src.rect.offset.h;
-	int src_w2 = src_w1 + info->src.rect.extent.w;
-	int src_h2 = src_h1 + info->src.rect.extent.h;
+	int src_w1 = info->src.params.rect.offset.w;
+	int src_h1 = info->src.params.rect.offset.h;
+	int src_w2 = src_w1 + info->src.params.rect.extent.w;
+	int src_h2 = src_h1 + info->src.params.rect.extent.h;
 
-	int dst_w1 = info->dst.rect.offset.w;
-	int dst_h1 = info->dst.rect.offset.h;
-	int dst_w2 = dst_w1 + info->dst.rect.extent.w;
-	int dst_h2 = dst_h1 + info->dst.rect.extent.h;
+	int dst_w1 = info->dst.params.rect.offset.w;
+	int dst_h1 = info->dst.params.rect.offset.h;
+	int dst_w2 = dst_w1 + info->dst.params.rect.extent.w;
+	int dst_h2 = dst_h1 + info->dst.params.rect.extent.h;
 
 	VkImageBlit blit_region = {
 	    .srcSubresource = src_subresource,
