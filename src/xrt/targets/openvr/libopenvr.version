@@ -5,6 +5,9 @@
  */
 
 OPENVR {
-	global: VRClientCoreFactory; # Only one exported symbol.
-	local: *;                    # Hide everything else.
+    global: 
+		VRClientCoreFactory; 
+		HmdSystemFactory;
+	# Hide everything else.
+	local: *;
 };

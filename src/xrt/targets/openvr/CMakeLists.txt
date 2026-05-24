@@ -36,7 +36,9 @@ if(APPLE)
 	set_property(
 		TARGET openvr
 		APPEND_STRING
-		PROPERTY LINK_FLAGS "-Wl,-exported_symbol -Wl,_VRClientCoreFactory"
+		PROPERTY
+			LINK_FLAGS
+			"-Wl,-exported_symbol -Wl,_VRClientCoreFactory -Wl,-exported_symbol -Wl,_HmdSystemFactory"
 		)
 elseif(NOT WIN32)
 	# Force the main "negotiate" symbol's inclusion
@@ -46,7 +48,7 @@ elseif(NOT WIN32)
 		APPEND_STRING
 		PROPERTY
 			LINK_FLAGS
-			"-u VRClientCoreFactory -Wl,--version-script=\"${CMAKE_CURRENT_SOURCE_DIR}/libopenvr.version\""
+			"-u VRClientCoreFactory -u HmdSystemFactory -Wl,--version-script=\"${CMAKE_CURRENT_SOURCE_DIR}/libopenvr.version\""
 		)
 	# Re-link if the version script changes.
 	set_property(

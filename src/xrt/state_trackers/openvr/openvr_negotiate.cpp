@@ -31,4 +31,11 @@ VRClientCoreFactory(const char *pInterfaceName, int *pReturnCode)
 	return NULL;
 }
 
+VR_INTERFACE void *
+HmdSystemFactory(const char *pInterfaceName, int *pReturnCode)
+{
+	// Implemented in SteamVR as a passthrough to VRClientCoreFactory, so we do the same here.
+	return VRClientCoreFactory(pInterfaceName, pReturnCode);
+}
+
 }; // namespace xrt::state_trackers::openvr

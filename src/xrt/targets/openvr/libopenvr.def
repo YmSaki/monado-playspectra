@@ -3,3 +3,4 @@
 ; SPDX-License-Identifier: BSL-1.0
 EXPORTS
     VRClientCoreFactory
+    HmdSystemFactory
