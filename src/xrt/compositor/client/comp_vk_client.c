@@ -270,10 +270,6 @@ client_vk_swapchain_destroy(struct xrt_swapchain *xsc)
 	struct client_vk_compositor *c = sc->c;
 	struct vk_bundle *vk = &c->vk;
 
-	vk_queue_lock(vk->main_queue);
-	vk->vkQueueWaitIdle(vk->main_queue->queue);
-	vk_queue_unlock(vk->main_queue);
-
 	vk_cmd_pool_lock(&c->pool);
 	for (uint32_t i = 0; i < sc->base.base.image_count; i++) {
 		if (sc->acquire[i] != VK_NULL_HANDLE) {
