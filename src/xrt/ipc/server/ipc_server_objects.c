@@ -9,6 +9,7 @@
 
 #include "xrt/xrt_device.h"
 #include "xrt/xrt_tracking.h"
+#include "xrt/xrt_space.h"
 
 #include "shared/ipc_protocol.h"
 #include "server/ipc_server.h"
@@ -140,4 +141,79 @@ ipc_server_objects_get_xtrack_id_or_add(volatile struct ipc_client_state *ics,
 	IPC_ERROR(ics->server, "Failed to find available slot for tracking origin: '%s'", xtrack->name);
 
 	return XRT_ERROR_IPC_FAILURE;
+}
+
+
+/*
+ *
+ * Space functions.
+ *
+ */
+
+xrt_result_t
+ipc_server_objects_get_xspc_and_validate(volatile struct ipc_client_state *ics,
+                                         uint32_t id,
+                                         struct xrt_space **out_xspc)
+{
+	if (id >= IPC_MAX_CLIENT_SPACES) {
+		IPC_ERROR(ics->server, "Invalid space ID %u (>= IPC_MAX_CLIENT_SPACES)", id);
+		return XRT_ERROR_IPC_FAILURE;
+	}
+
+	struct xrt_space *xspc = ics->xspcs[id];
+	if (xspc == NULL) {
+		IPC_ERROR(ics->server, "Space ID %u not found (NULL)", id);
+		return XRT_ERROR_IPC_FAILURE;
+	}
+
+	*out_xspc = xspc;
+
+	return XRT_SUCCESS;
+}
+
+xrt_result_t
+ipc_server_objects_get_xspc_id_or_add(volatile struct ipc_client_state *ics, struct xrt_space *xspc, uint32_t *out_id)
+{
+	assert(out_id != NULL);
+	assert(xspc != NULL);
+
+	// Check if space is already tracked and return its ID.
+	for (uint32_t index = 0; index < IPC_MAX_CLIENT_SPACES; index++) {
+		if (ics->xspcs[index] == xspc) {
+			*out_id = index;
+			return XRT_SUCCESS;
+		}
+	}
+
+	// If not, find a free slot for it, filled below.
+	for (uint32_t index = 0; index < IPC_MAX_CLIENT_SPACES; index++) {
+		if (ics->xspcs[index] == NULL) {
+			struct xrt_space **xspc_ptr = (struct xrt_space **)&ics->xspcs[index];
+			xrt_space_reference(xspc_ptr, xspc);
+			*out_id = index;
+			return XRT_SUCCESS;
+		}
+	}
+
+	IPC_ERROR(ics->server, "Failed to find available slot for space");
+	return XRT_ERROR_IPC_FAILURE;
+}
+
+xrt_result_t
+ipc_server_objects_destroy_xspc(volatile struct ipc_client_state *ics, uint32_t id)
+{
+	if (id >= IPC_MAX_CLIENT_SPACES) {
+		IPC_ERROR(ics->server, "Invalid space ID %u (>= IPC_MAX_CLIENT_SPACES)", id);
+		return XRT_ERROR_IPC_FAILURE;
+	}
+
+	if (ics->xspcs[id] == NULL) {
+		IPC_ERROR(ics->server, "Client tried to destroy non-existent space!");
+		return XRT_ERROR_IPC_FAILURE;
+	}
+
+	struct xrt_space **xspc_ptr = (struct xrt_space **)&ics->xspcs[id];
+	xrt_space_reference(xspc_ptr, NULL);
+
+	return XRT_SUCCESS;
 }
