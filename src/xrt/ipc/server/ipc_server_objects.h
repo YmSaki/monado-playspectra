@@ -14,7 +14,7 @@
 struct ipc_client_state;
 
 
-/*!
+/*
  *
  * Device functions.
  *
@@ -51,7 +51,7 @@ xrt_result_t
 ipc_server_objects_get_xdev_id_or_add(volatile struct ipc_client_state *ics, struct xrt_device *xdev, uint32_t *out_id);
 
 
-/*!
+/*
  *
  * Tracking origin functions.
  *
