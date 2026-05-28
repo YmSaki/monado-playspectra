@@ -84,6 +84,7 @@ Devices::AddDevice(openvr_logger &logger, vr::TrackedDeviceIndex_t index, xrt_de
 	                device.tracked_class);
 
 	this->events->TrackedDeviceActivated(index);
+	this->events->TrackedDeviceUserInteractionStarted(index);
 }
 
 Devices::Devices(openvr_logger &logger,
@@ -220,6 +221,24 @@ Devices::GetDeviceStringProperty(openvr_logger &logger,
 	case vr::ETrackedDeviceProperty::Prop_SerialNumber_String: str = xdev->serial; break;
 	default: SET_ERROR(pError, vr::ETrackedPropertyError::TrackedProp_UnknownProperty); return false;
 	}
+
+	return true;
+}
+
+bool
+Devices::GetTrackedDeviceActivityLevel(openvr_logger &logger,
+                                       vr::TrackedDeviceIndex_t device_index,
+                                       vr::EDeviceActivityLevel &activity_level)
+{
+	auto maybe_device = this->GetDevice(device_index);
+	if (!maybe_device.has_value()) {
+		OPENVR_LOG_ERROR(logger, "GetTrackedDeviceActivityLevel: device index %u is out of range or invalid",
+		                 device_index);
+		return false;
+	}
+
+	// @todo actually implement this and don't set every device to active user interaction
+	activity_level = vr::EDeviceActivityLevel::k_EDeviceActivityLevel_UserInteraction;
 
 	return true;
 }

@@ -105,6 +105,11 @@ public: // Methods
 	                        vr::ETrackedDeviceProperty prop,
 	                        std::string &out_str,
 	                        vr::ETrackedPropertyError *pError);
+
+	bool
+	GetTrackedDeviceActivityLevel(openvr_logger &logger,
+	                              vr::TrackedDeviceIndex_t device_index,
+	                              vr::EDeviceActivityLevel &activity_level);
 };
 
 }; // namespace xrt::state_trackers::openvr

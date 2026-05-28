@@ -45,6 +45,9 @@ public: // Methods
 	void
 	TrackedDeviceActivated(vr::TrackedDeviceIndex_t index);
 
+	void
+	TrackedDeviceUserInteractionStarted(vr::TrackedDeviceIndex_t index);
+
 	//! Handles active XRT session events, and pushes corresponding OpenVR events to the event queue.
 	xrt_result_t
 	HandleSessionEvents(openvr_logger &logger);

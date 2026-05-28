@@ -124,9 +124,21 @@ Events::Events(xrt_session *xs) : xs(xs) {}
 void
 Events::TrackedDeviceActivated(vr::TrackedDeviceIndex_t index)
 {
-	// @todo dox the processes in question to the application
 	vr::VREvent_t event = {
 	    .eventType = vr::VREvent_TrackedDeviceActivated,
+	    .trackedDeviceIndex = index,
+	    .eventAgeSeconds = 0.f,
+	    .data = {},
+	};
+
+	this->event_queue.push({.timestamp = os_monotonic_get_ns(), .event = event});
+}
+
+void
+Events::TrackedDeviceUserInteractionStarted(vr::TrackedDeviceIndex_t index)
+{
+	vr::VREvent_t event = {
+	    .eventType = vr::VREvent_TrackedDeviceUserInteractionStarted,
 	    .trackedDeviceIndex = index,
 	    .eventAgeSeconds = 0.f,
 	    .data = {},

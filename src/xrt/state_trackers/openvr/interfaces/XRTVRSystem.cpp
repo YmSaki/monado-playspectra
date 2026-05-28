@@ -343,10 +343,12 @@ XRTVRSystem_026::GetTrackedDeviceActivityLevel(vr::TrackedDeviceIndex_t unDevice
 	openvr_logger logger;
 	OPENVR_LOGGER_INIT(logger);
 
-	OPENVR_LOG_UNIMPLEMENTED_RET(logger, "GetTrackedDeviceActivityLevel(unDeviceId=%u) -> %d",
-	                             vr::EDeviceActivityLevel::k_EDeviceActivityLevel_Unknown,
-	                             static_cast<unsigned int>(unDeviceId),
-	                             static_cast<int>(vr::EDeviceActivityLevel::k_EDeviceActivityLevel_Unknown));
+	vr::EDeviceActivityLevel activity_level;
+	if (!this->core->devices->GetTrackedDeviceActivityLevel(logger, unDeviceId, activity_level)) {
+		return vr::EDeviceActivityLevel::k_EDeviceActivityLevel_Unknown;
+	}
+
+	return activity_level;
 }
 
 void
