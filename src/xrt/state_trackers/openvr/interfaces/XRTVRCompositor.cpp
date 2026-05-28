@@ -346,7 +346,7 @@ XRTVRCompositor_029::CanRenderScene()
 	openvr_logger logger;
 	OPENVR_LOGGER_INIT(logger);
 
-	OPENVR_LOG_UNIMPLEMENTED_RET(logger, "CanRenderScene() -> %d", false, 0);
+	OPENVR_LOG_UNIMPLEMENTED_RET(logger, "CanRenderScene() -> %d", true, 1);
 }
 
 void
