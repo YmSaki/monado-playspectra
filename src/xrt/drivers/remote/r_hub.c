@@ -8,11 +8,14 @@
  * @ingroup drv_remote
  */
 
-#include "r_internal.h"
-
 #include "util/u_var.h"
 #include "util/u_misc.h"
 #include "util/u_debug.h"
+
+#include "b_hand_tracker.h"
+
+#include "r_internal.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -413,6 +416,7 @@ r_create_devices(uint16_t port, uint32_t view_count, struct xrt_system_devices *
 
 	r->base.destroy = r_hub_system_devices_destroy;
 	r->base.get_roles = r_hub_system_devices_get_roles;
+	r->base.create_hand_tracker = b_hand_tracker_create;
 	r->origin.type = XRT_TRACKING_TYPE_RGB;
 	r->origin.initial_offset = (struct xrt_pose)XRT_POSE_IDENTITY;
 	r->reset.header = R_HEADER_VALUE;
