@@ -20,6 +20,7 @@
 #include "util/u_misc.h"
 #include "util/u_device.h"
 #include "util/u_device.h"
+#include "util/u_system_devices.h"
 
 #include "vive/vive_bindings.h"
 
@@ -985,11 +986,9 @@ steamvr_lh_create_devices(struct xrt_prober *xp, struct xrt_system_devices **out
 		return xrt_result::XRT_ERROR_DEVICE_CREATION_FAILED;
 	}
 
-	struct xrt_system_devices *xsysd = NULL;
-	xsysd = &svrs->base;
+	struct xrt_system_devices *xsysd = &svrs->base;
 
-	xsysd->destroy = destroy;
-	xsysd->get_roles = get_roles;
+	u_system_devices_populate_function_pointers(xsysd, get_roles, destroy);
 	xsysd->create_hand_tracker = b_hand_tracker_create;
 
 	// Include the HMD

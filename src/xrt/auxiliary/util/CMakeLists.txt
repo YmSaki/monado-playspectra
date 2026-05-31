@@ -93,6 +93,10 @@ add_library(
 	u_extension_list.cpp
 	u_extension_list.h
 	u_extension_list.hpp
+	u_system_devices.c
+	u_system_devices.h
+	u_system_devices_ni.c
+	u_system_devices_ni.h
 	u_system_helpers.c
 	u_system_helpers.h
 	u_template_historybuf.hpp

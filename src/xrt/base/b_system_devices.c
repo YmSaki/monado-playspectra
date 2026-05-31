@@ -14,6 +14,7 @@
 #include "util/u_device.h"
 #include "util/u_logging.h"
 #include "util/u_misc.h"
+#include "util/u_system_devices.h"
 
 #include "xrt/xrt_device.h"
 
@@ -241,11 +242,11 @@ struct b_system_devices_static *
 b_system_devices_static_allocate(void)
 {
 	struct b_system_devices_static *bsysds = U_TYPED_CALLOC(struct b_system_devices_static);
-	bsysds->base.base.destroy = destroy;
-	bsysds->base.base.get_roles = get_roles;
+
+	u_system_devices_populate_function_pointers(&bsysds->base.base, get_roles, destroy);
+	bsysds->base.base.create_hand_tracker = create_hand_tracker;
 	bsysds->base.base.feature_inc = feature_inc;
 	bsysds->base.base.feature_dec = feature_dec;
-	bsysds->base.base.create_hand_tracker = create_hand_tracker;
 
 	return bsysds;
 }

@@ -13,6 +13,7 @@
 
 #include "util/u_misc.h"
 #include "util/u_trace_marker.h"
+#include "util/u_system_devices.h"
 
 #include "b_system.h"
 #include "b_hand_tracker.h"
@@ -143,9 +144,9 @@ sdl_system_init(struct sdl_program *sp)
 void
 sdl_system_devices_init(struct sdl_program *sp)
 {
-	sp->xsysd_base.get_roles = sdl_system_devices_get_roles;
+	u_system_devices_populate_function_pointers(&sp->xsysd_base, sdl_system_devices_get_roles,
+	                                            sdl_system_devices_destroy);
 	sp->xsysd_base.create_hand_tracker = sdl_system_devices_create_hand_tracker;
-	sp->xsysd_base.destroy = sdl_system_devices_destroy;
 
 #ifdef USE_SIMULATED
 	const struct xrt_pose center = XRT_POSE_IDENTITY;

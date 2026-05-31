@@ -10,6 +10,7 @@
  */
 
 #include "util/u_system_helpers.h"
+#include "util/u_system_devices.h"
 #include "util/u_var.h"
 
 #include "b_system_devices.h"
@@ -132,11 +133,13 @@ xrt_result_t
 ipc_client_system_devices_create(struct ipc_connection *ipc_c, struct ipc_client_system_devices **out_icsd)
 {
 	struct ipc_client_system_devices *icsd = U_TYPED_CALLOC(struct ipc_client_system_devices);
-	icsd->base.base.get_roles = ipc_client_system_devices_get_roles;
-	icsd->base.base.destroy = ipc_client_system_devices_destroy;
+
+	u_system_devices_populate_function_pointers(&icsd->base.base, ipc_client_system_devices_get_roles,
+	                                            ipc_client_system_devices_destroy);
+	icsd->base.base.create_hand_tracker = ipc_client_system_devices_create_hand_tracker;
 	icsd->base.base.feature_inc = ipc_client_system_devices_feature_inc;
 	icsd->base.base.feature_dec = ipc_client_system_devices_feature_dec;
-	icsd->base.base.create_hand_tracker = ipc_client_system_devices_create_hand_tracker;
+
 	icsd->ipc_c = ipc_c;
 
 	// Initialize tracking origin manager
