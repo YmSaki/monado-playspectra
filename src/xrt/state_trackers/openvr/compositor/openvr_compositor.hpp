@@ -16,6 +16,14 @@
 #include "xrt/xrt_system.h"
 #include "xrt/xrt_gfx_vk.h"
 
+#ifdef XRT_HAVE_VULKAN
+#include "vk/vk_helpers.h"
+#include "vk/vk_cmd_pool.h"
+
+#include "render_shaders_interface.h"
+#include "render/render_interface.h"
+#endif
+
 #include "util/u_time.h"
 
 #include "common/openvr_logger.hpp"
@@ -38,16 +46,12 @@ struct EyeTexture
 	//! The index into the eye's swapchain for the currently held texture.
 	uint32_t swapchain_index;
 
-	//! The format of the currently held texture.
-	uint32_t format;
-	//! The width of the currently held texture.
+	//! The width of the currently held runtime swapchain texture.
 	uint32_t width;
-	//! The height of the currently held texture.
+	//! The height of the currently held runtime swapchain texture.
 	uint32_t height;
-	//! The sample count of the currently held texture.
-	uint32_t sample_count;
 
-	//! The bounds of the submitted texture.
+	//! The sub-image of the runtime swapchain texture to submit to the compositor.
 	xrt_rect bounds;
 
 	~EyeTexture()
@@ -83,13 +87,23 @@ public: // Fields
 
 	uint32_t width{0};
 	uint32_t height{0};
-	uint32_t format{0};
-	uint32_t sample_count{0};
+	uint32_t storage_format{0};
+	uint32_t sample_format{0};
 
 public: // Methods
 	//! Ensures that there is a swapchain in the cache with the given properties, creating one if necessary.
 	xrt_result_t
-	EnsureSwapchain(xrt_compositor *xc, uint32_t format, uint32_t width, uint32_t height, uint32_t sample_count);
+	EnsureSwapchain(xrt_compositor *xc,
+	                uint32_t storage_format,
+	                uint32_t sample_format,
+	                uint32_t width,
+	                uint32_t height,
+	                xrt_swapchain_usage_bits usage_bits,
+	                xrt_swapchain_create_flags flags);
+
+	//! Resets the internal state of the cache, releasing any swapchain it holds.
+	void
+	Reset();
 
 	~SwapchainCache();
 };
@@ -109,7 +123,7 @@ private: // Fields
 	std::optional<FrameState> active_frame{std::nullopt};
 	//! The state for each submit eye.
 	std::array<std::optional<EyeState>, 2> frame_eye_states{std::nullopt, std::nullopt};
-	//! Caches of swapchains for each eye, keyed by the format/size/sample count of the submitted texture.
+	//! Caches of swapchains for each eye, keyed by the runtime storage/sample formats and eye image size.
 	std::array<SwapchainCache, 2> swapchain_caches{};
 
 	//! The active system devices
@@ -124,7 +138,41 @@ private: // Fields
 	xrt_compositor *active_compositor{nullptr};
 
 #ifdef XRT_HAVE_VULKAN
+	//! The active Vulkan compositor.
 	struct xrt_compositor_vk *xc_vk{nullptr};
+
+	//! The vk_bundle for the compositor.
+	vk_bundle *vk{nullptr};
+
+	//! The command buffer pool for doing compositor work.
+	vk_cmd_pool *cmd_pool;
+
+	//! The shaders for the compositor.
+	render_shaders shaders;
+
+	struct
+	{
+		//! The sampler to use during the blit operation
+		VkSampler sampler{VK_NULL_HANDLE};
+
+		//! Private here for now.
+		VkPipelineCache pipeline_cache{VK_NULL_HANDLE};
+
+		//! Pipeline layout for blit pipelines.
+		VkPipelineLayout pipeline_layout{VK_NULL_HANDLE};
+
+		//! Descriptor pool for blit.
+		VkDescriptorPool descriptor_pool{VK_NULL_HANDLE};
+
+		//! Descriptor set layout for blit.
+		VkDescriptorSetLayout descriptor_set_layout{VK_NULL_HANDLE};
+
+		//! Descriptor set for blit.
+		VkDescriptorSet descriptor_set{VK_NULL_HANDLE};
+
+		//! The pipelines for blitting/copying app textures into runtime swapchain images.
+		std::array<VkPipeline, RENDER_BLIT_RESOLVE_COLOR_MODE_COUNT> pipelines{};
+	} blit;
 #endif
 
 	std::optional<RenderStateCache> render_state_cache{std::nullopt};
@@ -142,17 +190,24 @@ public: // Fields
 
 private: // Methods
 #ifdef XRT_HAVE_VULKAN
-	 //! Sets up the Vulkan compositor as the active compositor, and begins the session.
+	xrt_result_t
+	SetupBlitPipelines(openvr_logger &logger);
+
+	//! Sets up the Vulkan compositor as the active compositor, and begins the session.
 	xrt_result_t
 	SetupVulkanCompositor(openvr_logger &logger, vr::VRVulkanTextureData_t &vulkan_data);
 
+	void
+	DestroyVulkanResources();
+
 	xrt_result_t
-	BlitAppImageToSwapchainImage(openvr_logger &logger,
-	                             xrt_swapchain *xsc,
-	                             uint32_t dst_index,
-	                             vr::VRVulkanTextureData_t &texture_data,
-	                             vr::EColorSpace color_space,
-	                             const xrt_rect &rect);
+	TransferAppImageToSwapchainImage(openvr_logger &logger,
+	                                 xrt_swapchain *xsc,
+	                                 uint32_t dst_index,
+	                                 vr::VRVulkanTextureData_t &texture_data,
+	                                 VkFormat storage_format,
+	                                 vr::EColorSpace color_space,
+	                                 const xrt_rect &rect);
 
 	//! Handles submission of a Vulkan texture, which involves copying it into a runtime-owned swapchain image.
 	vr::EVRCompositorError

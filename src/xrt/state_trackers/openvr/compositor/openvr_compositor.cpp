@@ -28,11 +28,16 @@ namespace xrt::state_trackers::openvr {
  */
 
 xrt_result_t
-SwapchainCache::EnsureSwapchain(
-    xrt_compositor *xc, uint32_t format, uint32_t width, uint32_t height, uint32_t sample_count)
+SwapchainCache::EnsureSwapchain(xrt_compositor *xc,
+                                uint32_t storage_format,
+                                uint32_t sample_format,
+                                uint32_t width,
+                                uint32_t height,
+                                xrt_swapchain_usage_bits usage_bits,
+                                xrt_swapchain_create_flags flags)
 {
-	if (this->xsc != nullptr && this->format == format && this->width == width && this->height == height &&
-	    this->sample_count == sample_count) {
+	if (this->xsc != nullptr && this->storage_format == storage_format && this->sample_format == sample_format &&
+	    this->width == width && this->height == height) {
 		// Cache hit
 		return XRT_SUCCESS;
 	}
@@ -41,24 +46,34 @@ SwapchainCache::EnsureSwapchain(
 	if (this->xsc != nullptr) {
 		this->width = 0;
 		this->height = 0;
-		this->format = 0;
-		this->sample_count = 0;
+		this->storage_format = 0;
+		this->sample_format = 0;
 
 		xrt_swapchain_reference(&this->xsc, nullptr);
 	}
 
+	if (storage_format != sample_format) {
+		assert(flags & XRT_SWAPCHAIN_CREATE_SAMPLE_AS_SRGB);
+		assert(usage_bits & XRT_SWAPCHAIN_USAGE_MUTABLE_FORMAT);
+
+		if ((flags & XRT_SWAPCHAIN_CREATE_SAMPLE_AS_SRGB) == 0 ||
+		    (usage_bits & XRT_SWAPCHAIN_USAGE_MUTABLE_FORMAT) == 0) {
+			return XRT_ERROR_INVALID_ARGUMENT;
+		}
+	}
+
 	struct xrt_swapchain_create_info swapchain_create_info = {
-	    .create = (enum xrt_swapchain_create_flags)0,
-	    .bits = (enum xrt_swapchain_usage_bits)(XRT_SWAPCHAIN_USAGE_SAMPLED | XRT_SWAPCHAIN_USAGE_COLOR),
-	    .format = format,
-	    .sample_count = sample_count,
+	    .create = flags,
+	    .bits = usage_bits,
+	    .format = storage_format,
+	    .sample_count = 1,
 	    .width = width,
 	    .height = height,
 	    .face_count = 1,
 	    .array_size = 1,
 	    .mip_count = 1,
-	    .format_count = 0,
-	    .formats = {},
+	    .format_count = static_cast<uint32_t>((flags & XRT_SWAPCHAIN_CREATE_SAMPLE_AS_SRGB) ? 2 : 0),
+	    .formats = {storage_format, sample_format},
 	};
 
 	xrt_result_t xret = xrt_comp_create_swapchain(xc, &swapchain_create_info, &this->xsc);
@@ -69,17 +84,28 @@ SwapchainCache::EnsureSwapchain(
 
 	this->width = width;
 	this->height = height;
-	this->format = format;
-	this->sample_count = sample_count;
+	this->storage_format = storage_format;
+	this->sample_format = sample_format;
 
 	return XRT_SUCCESS;
 }
 
-SwapchainCache::~SwapchainCache()
+void
+SwapchainCache::Reset()
 {
+	this->width = 0;
+	this->height = 0;
+	this->storage_format = 0;
+	this->sample_format = 0;
+
 	if (this->xsc != nullptr) {
 		xrt_swapchain_reference(&this->xsc, nullptr);
 	}
+}
+
+SwapchainCache::~SwapchainCache()
+{
+	this->Reset();
 }
 
 /*
@@ -97,6 +123,15 @@ Compositor::Compositor(xrt_system_devices *xsysd,
 
 Compositor::~Compositor()
 {
+	// Wipe the swapchain caches, since we're about to destroy the compositor, and we want to make sure the
+	// swapchains are released before the compositor is destroyed.
+	this->swapchain_caches[0].Reset();
+	this->swapchain_caches[1].Reset();
+
+#ifdef XRT_HAVE_VULKAN
+	this->DestroyVulkanResources();
+#endif
+
 	if (this->active_compositor) {
 		xrt_comp_destroy(&this->active_compositor);
 	}

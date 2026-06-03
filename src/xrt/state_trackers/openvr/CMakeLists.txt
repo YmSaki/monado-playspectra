@@ -44,7 +44,7 @@ add_library(
 if(XRT_HAVE_VULKAN)
 	target_sources(st_openvr PRIVATE compositor/openvr_compositor_vulkan.cpp)
 
-	target_link_libraries(st_openvr PRIVATE aux_vk)
+	target_link_libraries(st_openvr PRIVATE aux_vk aux_render aux_shaders)
 endif()
 
 target_link_libraries(
