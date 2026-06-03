@@ -5,7 +5,7 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
 
-#define BLIT_SOURCE_MULTISAMPLED 0
+#define BLIT_SOURCE_MULTISAMPLED 1
 
 #include "blit.inc.glsl"
 

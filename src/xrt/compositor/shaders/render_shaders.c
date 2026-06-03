@@ -27,6 +27,7 @@
 #endif
 
 #include "blit.comp.h"
+#include "blit_ms.comp.h"
 #include "clear.comp.h"
 #include "layer.comp.h"
 #include "distortion.comp.h"
@@ -103,6 +104,7 @@ bool
 render_shaders_load(struct render_shaders *s, struct vk_bundle *vk)
 {
 	LOAD(blit_comp);
+	LOAD(blit_ms_comp);
 
 	LOAD(clear_comp);
 
@@ -131,6 +133,7 @@ void
 render_shaders_fini(struct render_shaders *s, struct vk_bundle *vk)
 {
 	D(ShaderModule, s->blit_comp);
+	D(ShaderModule, s->blit_ms_comp);
 	D(ShaderModule, s->clear_comp);
 	D(ShaderModule, s->distortion_comp);
 	D(ShaderModule, s->layer_comp);

@@ -6,8 +6,16 @@
 # Shaders headers
 #
 
+set(DEPENDS
+    blit.inc.glsl
+    hsv.inc.glsl
+    layer_defines.inc.glsl
+    srgb.inc.glsl
+	)
+
 set(SHADERS
     blit.comp
+    blit_ms.comp
     clear.comp
     distortion.comp
     layer.comp
@@ -21,8 +29,11 @@ set(SHADERS
     layer_projection.frag
     layer_quad.vert
     layer_quad.frag
+	DEPENDS
+	${DEPENDS}
 	)
 
+# Compile all the non-specialized shaders
 spirv_shaders(
 	SHADER_HEADERS
 	SPIRV_VERSION
