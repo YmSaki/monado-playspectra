@@ -223,21 +223,27 @@ bool
 Camera::TryDevicePose(std::unique_ptr<Device> &device,
                       CameraSample &sample,
                       xrt_pose &Tcv_cam_world,
-                      xrt_pose &Tcv_world_device_prior,
+                      std::optional<xrt_pose> &Tcv_world_device_prior,
                       xrt_pose &Tcv_world_device_candidate,
                       xrt_pose &Tcv_cam_device_found)
 {
-	xrt_pose Tcv_cam_device_prior;
-	math_pose_transform(&Tcv_cam_world, &Tcv_world_device_prior, &Tcv_cam_device_prior);
-
 	xrt_pose Tcv_cam_device_candidate;
 	math_pose_transform(&Tcv_cam_world, &Tcv_world_device_candidate, &Tcv_cam_device_candidate);
 
 	pose_metrics score;
-	pose_metrics_evaluate_pose_with_prior(&score, &Tcv_cam_device_candidate, false, &Tcv_cam_device_prior,
-	                                      &device->prior_pos_error, &device->prior_rot_error, sample.blobs,
-	                                      sample.blob_count, &device->params.led_model, device->id, &this->model,
-	                                      NULL);
+	if (Tcv_world_device_prior.has_value()) {
+		xrt_pose Tcv_cam_device_prior;
+		math_pose_transform(&Tcv_cam_world, &Tcv_world_device_prior.value(), &Tcv_cam_device_prior);
+
+		pose_metrics_evaluate_pose_with_prior(&score, &Tcv_cam_device_candidate, false, &Tcv_cam_device_prior,
+		                                      &device->prior_pos_error, &device->prior_rot_error, sample.blobs,
+		                                      sample.blob_count, &device->params.led_model, device->id,
+		                                      &this->model, NULL);
+	} else {
+		pose_metrics_evaluate_pose(&score, &Tcv_cam_device_candidate, sample.blobs, sample.blob_count,
+		                           &device->params.led_model, device->id, &this->model, NULL);
+	}
+
 
 	if (POSE_HAS_FLAGS(&score, POSE_MATCH_GOOD | POSE_MATCH_LED_IDS)) {
 		this->PushPose(sample, device, score, Tcv_cam_device_candidate, true);
@@ -252,7 +258,7 @@ bool
 Camera::TryDeviceBlobRecovery(std::unique_ptr<Device> &device,
                               CameraSample &sample,
                               xrt_pose &Tcv_cam_world,
-                              xrt_pose &Tcv_world_device_prior,
+                              std::optional<xrt_pose> &Tcv_world_device_prior,
                               xrt_pose &Tcv_cam_device_found)
 {
 	auto tracker = this->tracker;
@@ -274,7 +280,12 @@ Camera::TryDeviceBlobRecovery(std::unique_ptr<Device> &device,
 	}
 
 	xrt_pose Tcv_cam_device_prior;
-	math_pose_transform(&Tcv_cam_world, &Tcv_world_device_prior, &Tcv_cam_device_prior);
+	if (Tcv_world_device_prior.has_value()) {
+		math_pose_transform(&Tcv_cam_world, &Tcv_world_device_prior.value(), &Tcv_cam_device_prior);
+	} else {
+		// The RANSAC should still be able to run with an identity pose.
+		Tcv_cam_device_prior = XRT_POSE_IDENTITY;
+	}
 
 	// RANSAC-PnP with the matched blobs
 	xrt_pose Tcv_cam_device = Tcv_cam_device_prior;
@@ -285,11 +296,17 @@ Camera::TryDeviceBlobRecovery(std::unique_ptr<Device> &device,
 		return false;
 	}
 
-	// Evaluate the pose
 	pose_metrics score;
-	pose_metrics_evaluate_pose_with_prior(
-	    &score, &Tcv_cam_device, true, &Tcv_cam_device_prior, &device->prior_pos_error, &device->prior_rot_error,
-	    sample.blobs, sample.blob_count, &device->params.led_model, device->id, &this->model, NULL);
+	// Evaluate the pose, using the prior if available
+	if (Tcv_world_device_prior.has_value()) {
+		pose_metrics_evaluate_pose_with_prior(&score, &Tcv_cam_device, true, &Tcv_cam_device_prior,
+		                                      &device->prior_pos_error, &device->prior_rot_error, sample.blobs,
+		                                      sample.blob_count, &device->params.led_model, device->id,
+		                                      &this->model, NULL);
+	} else {
+		pose_metrics_evaluate_pose(&score, &Tcv_cam_device, sample.blobs, sample.blob_count,
+		                           &device->params.led_model, device->id, &this->model, NULL);
+	}
 
 	if (POSE_HAS_FLAGS(&score, POSE_MATCH_GOOD)) {
 		CT_DEBUG(tracker, "Camera %p RANSAC-PnP recovered pose for device %d from %u blobs", (void *)this,
@@ -427,27 +444,30 @@ Camera::FastSampleProcess(CameraSample &sample)
 		t_constellation_tracker_tracking_source_get_tracked_pose(
 		    device->params.tracking_source, sample.timestamp_ns, &device_predicted_relation);
 
+		std::optional<xrt_pose> Tcv_world_device_predicted = std::nullopt; //< AKA "the prior"
+
 		// Whether the prior pose is actually valid
-		bool prior_valid =
-		    (device_predicted_relation.relation_flags &
+		if ((device_predicted_relation.relation_flags &
 		     (XRT_SPACE_RELATION_POSITION_VALID_BIT | XRT_SPACE_RELATION_ORIENTATION_VALID_BIT)) ==
-		    (XRT_SPACE_RELATION_POSITION_VALID_BIT | XRT_SPACE_RELATION_ORIENTATION_VALID_BIT);
+		    (XRT_SPACE_RELATION_POSITION_VALID_BIT | XRT_SPACE_RELATION_ORIENTATION_VALID_BIT)) {
+			Tcv_world_device_predicted.emplace(xrt_pose{}); // initialize it to a value
+			math_pose_convert_opencv(&device_predicted_relation.pose, &Tcv_world_device_predicted.value());
+		}
 
 		auto &device_state = sample.device_states[sample.device_count++] = {
 		    .device_id = device->id,
-		    .Txr_world_device_prior =
-		        prior_valid ? std::optional<xrt_pose>(device_predicted_relation.pose) : std::nullopt,
+		    .Txr_world_device_prior = Tcv_world_device_predicted.has_value()
+		                                  ? std::optional<xrt_pose>(device_predicted_relation.pose)
+		                                  : std::nullopt,
 		    .needs_slow_processing = false,
 		};
-
-		xrt_pose Tcv_world_device_predicted; //< AKA "the prior"
-		math_pose_convert_opencv(&device_predicted_relation.pose, &Tcv_world_device_predicted);
 
 		xrt_pose Tcv_cam_device_found;
 
 		// if we have a valid prior pose, try to use it for fast matching
-		if (prior_valid && this->TryDevicePose(device, sample, Tcv_cam_world, Tcv_world_device_predicted,
-		                                       Tcv_world_device_predicted, Tcv_cam_device_found)) {
+		if (Tcv_world_device_predicted.has_value() &&
+		    this->TryDevicePose(device, sample, Tcv_cam_world, Tcv_world_device_predicted,
+		                        Tcv_world_device_predicted.value(), Tcv_cam_device_found)) {
 			CT_DEBUG(tracker, "Fast processing for device %d succeeded", device->id);
 			device_state.Tcv_cam_device_found = Tcv_cam_device_found;
 

@@ -257,7 +257,7 @@ public: // Methods (t_constellation_tracker.cpp)
 	TryDevicePose(std::unique_ptr<Device> &device,
 	              CameraSample &sample,
 	              xrt_pose &Tcv_cam_world,
-	              xrt_pose &Tcv_world_device_prior,
+	              std::optional<xrt_pose> &Tcv_world_device_prior,
 	              xrt_pose &Tcv_world_device_candidate,
 	              xrt_pose &Tcv_cam_device_found);
 
@@ -265,7 +265,7 @@ public: // Methods (t_constellation_tracker.cpp)
 	TryDeviceBlobRecovery(std::unique_ptr<Device> &device,
 	                      CameraSample &sample,
 	                      xrt_pose &Tcv_cam_world,
-	                      xrt_pose &Tcv_world_device_prior,
+	                      std::optional<xrt_pose> &Tcv_world_device_prior,
 	                      xrt_pose &Tcv_cam_device_found);
 
 	void
