@@ -12,6 +12,7 @@
 
 #include "xrt/xrt_device.h"
 #include "util/u_device.h"
+#include "util/u_device_id.h"
 #include "g_catch_guard.hpp"
 #include "g_traits.hpp"
 
@@ -122,6 +123,8 @@ public: // Members
 
 		// Setup function for the device.
 		auto &xdev = *getXDev();
+
+		u_device_id_assign(&xdev);
 
 		// Inits all functions, some are replaced below.
 		u_device_populate_function_pointers(&xdev, getTrackedPoseWrap, destroyDeviceWrap);

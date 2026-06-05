@@ -1,4 +1,5 @@
 // Copyright 2023, Shawn Wallace
+// Copyright 2026, NVIDIA CORPORATION.
 // SPDX-License-Identifier: BSL-1.0
 /*!
  * @file
@@ -17,6 +18,7 @@
 
 #include "util/u_debug.h"
 #include "util/u_device.h"
+#include "util/u_device_id.h"
 #include "util/u_hand_tracking.h"
 #include "util/u_logging.h"
 #include "util/u_json.hpp"
@@ -304,6 +306,8 @@ Device::~Device()
 
 Device::Device(const DeviceBuilder &builder) : xrt_device({}), ctx(builder.ctx), driver(builder.driver)
 {
+	u_device_id_assign(this);
+
 	m_relation_history_create(&relation_hist);
 	std::strncpy(this->serial, builder.serial, XRT_DEVICE_NAME_LEN - 1);
 	this->serial[XRT_DEVICE_NAME_LEN - 1] = 0;
