@@ -1116,7 +1116,7 @@ pssense_get_constellation_tracking_source_pose(struct t_constellation_tracker_tr
 	struct pssense_device *pssense = from_constellation_tracking_source(tracking_source);
 
 	os_thread_helper_lock(&pssense->controller_thread);
-	pssense_get_imu_fusion_pose(pssense, when_ns, out_relation);
+	pssense_get_constellation_pose(pssense, when_ns, out_relation);
 	os_thread_helper_unlock(&pssense->controller_thread);
 }
 
