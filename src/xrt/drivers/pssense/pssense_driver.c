@@ -1099,8 +1099,7 @@ pssense_push_constellation_tracker_sample(struct t_constellation_tracker_device 
 	                      XRT_SPACE_RELATION_POSITION_VALID_BIT | XRT_SPACE_RELATION_POSITION_TRACKED_BIT,
 	};
 
-	m_relation_history_push_with_motion_estimation(pssense->tracking.constellation_relation_history, &relation,
-	                                               device_ts);
+	m_relation_history_push(pssense->tracking.constellation_relation_history, &relation, device_ts);
 }
 
 /*
