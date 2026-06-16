@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "xrt/xrt_config_build.h"
 #include "xrt/xrt_frame.h"
 #include "xrt/xrt_tracking.h"
 
@@ -380,6 +381,10 @@ public: // Fields
 	t_constellation_device_id_t next_device_id{0};
 
 	std::unique_ptr<DataRecorder> data_recorder{};
+
+#ifdef XRT_FEATURE_RERUN
+	std::unique_ptr<struct RerunContext> rerun_stream{};
+#endif
 
 public: // Methods
 	static ConstellationTracker *

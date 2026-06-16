@@ -47,3 +47,12 @@ if(XRT_HAVE_OPENCV)
 	target_link_libraries(constellation PRIVATE ${OpenCV_LIBRARIES})
 	target_sources(constellation PRIVATE pose_optimize.cpp)
 endif()
+
+if(XRT_FEATURE_RERUN)
+	target_link_libraries(constellation PRIVATE rerun_sdk)
+
+	target_sources(
+		constellation PRIVATE constellation_tracker_rerun.cpp
+				      constellation_tracker_rerun.hpp
+		)
+endif()

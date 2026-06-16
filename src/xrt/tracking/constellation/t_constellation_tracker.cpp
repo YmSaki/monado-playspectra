@@ -7,8 +7,14 @@
  * @ingroup tracking
  */
 
+#include "xrt/xrt_config_build.h"
+
 #include "t_constellation_tracker_internal.hpp"
 #include "t_constellation_tracker_dataset.hpp"
+
+#ifdef XRT_FEATURE_RERUN
+#include "constellation_tracker_rerun.hpp"
+#endif
 
 #include <string>
 
@@ -17,6 +23,12 @@ namespace xrt::tracking::constellation {
 
 DEBUG_GET_ONCE_LOG_OPTION(constellation_tracker_log, "CONSTELLATION_TRACKER_LOG", U_LOGGING_WARN)
 DEBUG_GET_ONCE_OPTION(constellation_tracker_data_recorder_output, "CONSTELLATION_TRACKER_DATA_RECORDER_OUTPUT", "")
+
+// Unconditionally present to allow warning that the feature is not enabled.
+DEBUG_GET_ONCE_BOOL_OPTION(constellation_tracker_enable_rerun, "CONSTELLATION_TRACKER_RERUN_ENABLE", false)
+#ifdef XRT_FEATURE_RERUN
+DEBUG_GET_ONCE_BOOL_OPTION(constellation_tracker_rerun_spawn, "CONSTELLATION_TRACKER_RERUN_SPAWN", true)
+#endif
 
 /*
  *
@@ -632,6 +644,20 @@ Camera::PushPose(CameraSample &camera_sample,
 		device->locked_data.Txr_world_device_last_known = Txr_world_device;
 	}
 
+#ifdef XRT_FEATURE_RERUN
+	if (tracker->rerun_stream) {
+		tracker->rerun_stream->LogTrackedFrame( //
+		    camera_sample,                      //
+		    device->id,                         //
+		    device->params.led_model,           //
+		    this->calibration,                  //
+		    Txr_world_cam.value(),              //
+		    Txr_cam_device,                     //
+		    Txr_world_device,                   //
+		    average_brightness);                //
+	}
+#endif
+
 	CT_DEBUG(tracker, "Found pose for device %d", device->id);
 }
 
@@ -766,6 +792,21 @@ ConstellationTracker::ConstellationTracker(t_constellation_tracker_params *param
 		this->data_recorder = std::make_unique<DataRecorder>(this, data_recorder_output);
 		CT_INFO(this, "Constellation tracker data recorder enabled, outputting to %s",
 		        data_recorder_output.c_str());
+	}
+
+	if (debug_get_bool_option_constellation_tracker_enable_rerun()) {
+#ifdef XRT_FEATURE_RERUN
+		this->rerun_stream = std::make_unique<RerunContext>();
+		CT_INFO(this, "Constellation tracker Rerun stream enabled, outputting to constellation_tracker.rerun");
+
+		if (debug_get_bool_option_constellation_tracker_rerun_spawn()) {
+			this->rerun_stream->stream->spawn().exit_on_failure();
+		} else {
+			this->rerun_stream->stream->connect_grpc().exit_on_failure();
+		}
+#else
+		CT_ERROR(this, "Rerun stream requested but XRT_FEATURE_RERUN is not enabled");
+#endif
 	}
 
 	CT_DEBUG(this, "Created constellation tracker with %zu mosaics", this->mosaics.size());
