@@ -122,6 +122,7 @@ find_package(
 find_package(Libusb1 MODULE)
 find_package(JPEG MODULE)
 find_package(realsense2 CONFIG)
+find_package(rerun_sdk CONFIG)
 find_package(depthai CONFIG)
 find_package(SDL2 CONFIG)
 find_package(ZLIB MODULE)
@@ -294,6 +295,7 @@ option_with_deps(XRT_FEATURE_OPENVR "Build OpenVR runtime target" DEPENDS XRT_MO
 option_with_deps(XRT_FEATURE_OPENXR "Build OpenXR runtime target" DEPENDS XRT_MODULE_OPENXR_STATE_TRACKER "XRT_MODULE_COMPOSITOR_MAIN OR XRT_MODULE_COMPOSITOR_NULL")
 set(XRT_FEATURE_OPENXR_DEBUG_UTILS OFF) # Has never been enabled
 option_with_deps(XRT_FEATURE_RENDERDOC "Enable RenderDoc API" DEPENDS "RT_LIBRARY OR WIN32 OR ANDROID")
+option_with_deps(XRT_FEATURE_RERUN "Enable integration of Rerun SDK" DEFAULT OFF DEPENDS rerun_sdk_FOUND)
 option_with_deps(XRT_FEATURE_SERVICE "Enable separate service module for OpenXR runtime" DEPENDS XRT_MODULE_IPC XRT_FEATURE_OPENXR)
 option_with_deps(XRT_FEATURE_SERVICE_SYSTEMD "Enable systemd socket activation of the service" DEPENDS XRT_HAVE_SYSTEMD XRT_FEATURE_SERVICE)
 option_with_deps(XRT_FEATURE_SLAM "Enable SLAM tracking support" DEPENDS XRT_HAVE_OPENCV XRT_HAVE_LINUX)
@@ -653,6 +655,7 @@ message(STATUS "#    FEATURE_DEBUG_GUI:                             ${XRT_FEATUR
 message(STATUS "#    FEATURE_OPENVR:                                ${XRT_FEATURE_OPENVR}")
 message(STATUS "#    FEATURE_OPENXR:                                ${XRT_FEATURE_OPENXR}")
 message(STATUS "#    FEATURE_RENDERDOC:                             ${XRT_FEATURE_RENDERDOC}")
+message(STATUS "#    FEATURE_RERUN:                                 ${XRT_FEATURE_RERUN}")
 message(STATUS "#    FEATURE_SERVICE:                               ${XRT_FEATURE_SERVICE}")
 message(STATUS "#    FEATURE_SERVICE_SYSTEMD:                       ${XRT_FEATURE_SERVICE_SYSTEMD}")
 message(STATUS "#    FEATURE_SLAM:                                  ${XRT_FEATURE_SLAM}")
