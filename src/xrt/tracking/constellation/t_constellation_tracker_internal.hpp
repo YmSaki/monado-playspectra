@@ -198,7 +198,7 @@ public: // Fields
 	size_t index;
 
 	//! Does "slow" processing for this camera when fast recovery paths fail.
-	os_thread_helper slow_processing_thread;
+	os_thread_helper slow_processing_thread{};
 	struct
 	{
 		std::optional<CameraSample> sample{std::nullopt};
@@ -212,7 +212,7 @@ public: // Fields
 	 * Does "fast" processing for this camera, trying to recover a pose quickly. It's valid for this to happen at
 	 * the same time as a slow process.
 	 */
-	os_thread_helper fast_processing_thread;
+	os_thread_helper fast_processing_thread{};
 	struct
 	{
 		std::optional<CameraSample> sample{std::nullopt};
@@ -373,6 +373,8 @@ public: // Fields
 	enum u_logging_level log_level = U_LOGGING_WARN;
 
 	t_constellation_tracker_params params;
+
+	bool single_threaded{false};
 
 	std::vector<std::shared_ptr<CameraMosaic>> mosaics;
 

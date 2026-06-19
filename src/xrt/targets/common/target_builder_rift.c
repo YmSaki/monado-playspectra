@@ -503,6 +503,7 @@ rift_open_system_impl(struct xrt_builder *xb,
 		rb->blobwatch_debug_sinks = U_TYPED_ARRAY_CALLOC(struct u_sink_debug, sensor_count);
 
 		struct t_constellation_tracker_params constellation_tracker_params = {
+		    .flags = T_CONSTELLATION_TRACKER_FLAGS_NONE,
 		    .num_mosaics = 1,
 		};
 

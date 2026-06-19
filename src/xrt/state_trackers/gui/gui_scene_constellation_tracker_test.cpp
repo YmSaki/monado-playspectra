@@ -110,6 +110,7 @@ public: // Methods
 		};
 
 		t_constellation_tracker_params params = {
+		    .flags = T_CONSTELLATION_TRACKER_FLAGS_DETERMINISTIC,
 		    .mosaics = {},
 		    .num_mosaics = static_cast<size_t>(this->dataset.mosaics.size()),
 		};

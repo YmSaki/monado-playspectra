@@ -167,18 +167,22 @@ Camera::Camera(ConstellationTracker *tracker,
 	this->slow_processing_thread_data.cs = correspondence_search_new(log_level_ptr, &this->model);
 	this->fast_processing_thread_data.cs = correspondence_search_new(log_level_ptr, &this->model);
 
-	if (os_thread_helper_init(&this->slow_processing_thread) < 0) {
-		throw std::runtime_error("Slow processing thread failed to init");
-	}
-	if (os_thread_helper_init(&this->fast_processing_thread) < 0) {
-		throw std::runtime_error("Fast processing thread failed to init");
-	}
+	if (!this->tracker->single_threaded) {
+		if (os_thread_helper_init(&this->slow_processing_thread) < 0) {
+			throw std::runtime_error("Slow processing thread failed to init");
+		}
+		if (os_thread_helper_init(&this->fast_processing_thread) < 0) {
+			throw std::runtime_error("Fast processing thread failed to init");
+		}
 
-	if (os_thread_helper_start(&this->slow_processing_thread, constellation_tracker_camera_slow_thread, this) < 0) {
-		throw std::runtime_error("Starting slow processing thread failed");
-	}
-	if (os_thread_helper_start(&this->fast_processing_thread, constellation_tracker_camera_fast_thread, this) < 0) {
-		throw std::runtime_error("Starting fast processing thread failed");
+		if (os_thread_helper_start(&this->slow_processing_thread, constellation_tracker_camera_slow_thread,
+		                           this) < 0) {
+			throw std::runtime_error("Starting slow processing thread failed");
+		}
+		if (os_thread_helper_start(&this->fast_processing_thread, constellation_tracker_camera_fast_thread,
+		                           this) < 0) {
+			throw std::runtime_error("Starting fast processing thread failed");
+		}
 	}
 
 	u_sink_debug_init(&this->slow_processing_thread_data.debug_sink);
@@ -749,6 +753,11 @@ Device::~Device()
 
 ConstellationTracker::ConstellationTracker(t_constellation_tracker_params *params)
 {
+	// If the deterministic flag is set, we force single-threaded processing.
+	if ((params->flags & T_CONSTELLATION_TRACKER_FLAGS_DETERMINISTIC) != 0) {
+		this->single_threaded = true;
+	}
+
 	this->log_level = debug_get_log_option_constellation_tracker_log();
 
 	this->mosaics.reserve(params->num_mosaics);
@@ -962,11 +971,24 @@ constellation_tracker_camera_push_blobs(t_blob_sink *tbs, t_blob_observation *tb
 		return;
 	}
 
-	// Send to the fast thread
-	os_thread_helper_lock(&camera->fast_processing_thread);
-	camera->fast_processing_thread_data.sample = CameraSample(*tbo, camera);
-	os_thread_helper_signal_locked(&camera->fast_processing_thread);
-	os_thread_helper_unlock(&camera->fast_processing_thread);
+	if (tracker->single_threaded) {
+		auto sample = CameraSample(*tbo, camera);
+
+		// If we're in single-threaded mode, just process the sample immediately on the fast thread
+		if (camera->FastSampleProcess(sample)) {
+			CT_TRACE(tracker,
+			         "Fast processing for camera %p failed in single-threaded mode, doing slow processing",
+			         (void *)camera);
+
+			camera->SlowSampleProcess(sample);
+		}
+	} else {
+		// Send to the fast thread
+		os_thread_helper_lock(&camera->fast_processing_thread);
+		camera->fast_processing_thread_data.sample = CameraSample(*tbo, camera);
+		os_thread_helper_signal_locked(&camera->fast_processing_thread);
+		os_thread_helper_unlock(&camera->fast_processing_thread);
+	}
 }
 
 void
