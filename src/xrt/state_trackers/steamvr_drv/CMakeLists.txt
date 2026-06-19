@@ -1,4 +1,5 @@
 # Copyright 2020-2021, Collabora, Ltd.
+# Copyright 2026, NVIDIA CORPORATION.
 # SPDX-License-Identifier: BSL-1.0
 
 add_subdirectory(steamvr_bindings)
@@ -12,6 +13,5 @@ target_link_libraries(
 		xrt-interfaces
 		xrt-external-openvr
 		aux_math
-		aux_generated_bindings_helpers
 		ovrd_generated_bindings
 	)

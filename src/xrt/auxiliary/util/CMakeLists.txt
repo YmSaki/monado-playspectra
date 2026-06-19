@@ -134,7 +134,6 @@ target_link_libraries(
 		xrt-external-metrics
 		xrt-external-bcdec
 		aux-includes
-		aux_generated_bindings_helpers
 		aux_os
 		aux_math
 	)
