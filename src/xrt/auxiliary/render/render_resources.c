@@ -1152,7 +1152,7 @@ render_resources_get_timestamps(struct render_resources *r, uint64_t *out_gpu_st
 	VkResult ret = VK_SUCCESS;
 
 	// Simple pre-check, needed by vk_convert_timestamps_to_host_ns.
-	if (!vk->has_EXT_calibrated_timestamps) {
+	if (!vk->has_EXT_calibrated_timestamps && !vk->has_KHR_calibrated_timestamps) {
 		return false;
 	}
 
