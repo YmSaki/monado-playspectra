@@ -657,7 +657,7 @@ comp_target_swapchain_create_images(struct comp_target *ct,
 	}
 
 	// if we have the present wait extension, mark it as supported now
-	ct->wait_for_present_supported = vk->has_KHR_present_wait && debug_get_bool_option_use_present_wait();
+	ct->wait_for_present_supported = vk->features.present_wait && debug_get_bool_option_use_present_wait();
 
 	// Free old image views.
 	destroy_image_views(cts);
