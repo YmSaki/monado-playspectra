@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "xrt/xrt_limits.h"
+
 #include "oxr_frame_sync.h" // iwyu pragma: keep
 
 #include <stddef.h>
@@ -289,9 +291,10 @@ struct oxr_subaction_paths;
 
 #define OXR_VERIFY_VIEW_INDEX(log, index)                                                                              \
 	do {                                                                                                           \
-		if (index > 2) {                                                                                       \
+		if (index >= XRT_MAX_COMPOSITOR_VIEW_CONFIGS_VIEW_COUNT) {                                             \
 			return oxr_error(log, XR_ERROR_VALIDATION_FAILURE,                                             \
-			                 "Invalid view index %d, only 2 views supported", index);                      \
+			                 "Invalid view index %d, only %d views supported", index,                      \
+			                 XRT_MAX_COMPOSITOR_VIEW_CONFIGS_VIEW_COUNT);                                  \
 		}                                                                                                      \
 	} while (false)
 

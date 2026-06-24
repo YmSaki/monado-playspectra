@@ -1129,7 +1129,7 @@ struct oxr_system
 	XrReferenceSpaceType reference_spaces[5];
 	uint32_t reference_space_count;
 
-	struct xrt_visibility_mask *visibility_mask[2];
+	struct xrt_visibility_mask *visibility_mask[XRT_MAX_COMPOSITOR_VIEW_CONFIGS_VIEW_COUNT];
 
 #ifdef OXR_HAVE_MNDX_xdev_space
 	bool supports_xdev_space;
