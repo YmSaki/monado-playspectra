@@ -43,12 +43,15 @@
 const char *
 oxr_handle_state_to_string(enum oxr_handle_state state)
 {
+	const char *state_str = "<UNKNOWN>";
+
 	switch (state) {
-	case OXR_HANDLE_STATE_UNINITIALIZED: return "UNINITIALIZED";
-	case OXR_HANDLE_STATE_LIVE: return "LIVE";
-	case OXR_HANDLE_STATE_DESTROYED: return "DESTROYED";
-	default: return "<UNKNOWN>";
+	case OXR_HANDLE_STATE_UNINITIALIZED: state_str = "UNINITIALIZED"; break;
+	case OXR_HANDLE_STATE_LIVE: state_str = "LIVE"; break;
+	case OXR_HANDLE_STATE_DESTROYED: state_str = "DESTROYED"; break;
 	}
+
+	return state_str;
 }
 
 
