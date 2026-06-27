@@ -103,6 +103,11 @@ oxr_handle_parent_init(struct oxr_logger *log,
 		return result;
 	}
 
+	result = oxr_handle_array_init(log, &hpb->children);
+	if (result != XR_SUCCESS) {
+		return result;
+	}
+
 	return XR_SUCCESS;
 }
 
