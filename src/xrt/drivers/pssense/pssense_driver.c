@@ -276,11 +276,7 @@ struct pssense_device
 		struct xrt_pose T_led_imu;
 	} tracking;
 
-	enum
-	{
-		PSSENSE_HAND_LEFT,
-		PSSENSE_HAND_RIGHT
-	} hand;
+	enum xrt_hand hand;
 
 	enum u_logging_level log_level;
 
@@ -540,7 +536,7 @@ pssense_handle_read(struct pssense_device *pssense)
 	input.thumbstick.y = (data.thumbstick_y - 128) / -128.0f;
 	input.thumbstick_touch = (data.buttons[2] & 4) != 0;
 
-	if (pssense->hand == PSSENSE_HAND_LEFT) {
+	if (pssense->hand == XRT_HAND_LEFT) {
 		input.share_click = (data.buttons[1] & 1) != 0;
 		input.square_click = (data.buttons[0] & 1) != 0;
 		input.square_touch = (data.buttons[2] & 2) != 0;
@@ -549,7 +545,7 @@ pssense_handle_read(struct pssense_device *pssense)
 		input.squeeze_click = (data.buttons[0] & 16) != 0;
 		input.trigger_click = (data.buttons[0] & 64) != 0;
 		input.thumbstick_click = (data.buttons[1] & 4) != 0;
-	} else if (pssense->hand == PSSENSE_HAND_RIGHT) {
+	} else if (pssense->hand == XRT_HAND_RIGHT) {
 		input.options_click = (data.buttons[1] & 2) != 0;
 		input.cross_click = (data.buttons[0] & 2) != 0;
 		input.cross_touch = (data.buttons[2] & 2) != 0;
@@ -1544,7 +1540,7 @@ pssense_create(struct xrt_prober *xp,
 
 	if (xpdev->product_id == PSSENSE_PID_LEFT) {
 		pssense->base.device_type = XRT_DEVICE_TYPE_LEFT_HAND_CONTROLLER;
-		pssense->hand = PSSENSE_HAND_LEFT;
+		pssense->hand = XRT_HAND_LEFT;
 
 		pssense->led_model.leds = pssense_left_leds;
 		pssense->led_model.led_count = ARRAY_SIZE(pssense_left_leds);
@@ -1555,7 +1551,7 @@ pssense_create(struct xrt_prober *xp,
 		};
 	} else if (xpdev->product_id == PSSENSE_PID_RIGHT) {
 		pssense->base.device_type = XRT_DEVICE_TYPE_RIGHT_HAND_CONTROLLER;
-		pssense->hand = PSSENSE_HAND_RIGHT;
+		pssense->hand = XRT_HAND_RIGHT;
 
 		pssense->led_model.leds = pssense_right_leds;
 		pssense->led_model.led_count = ARRAY_SIZE(pssense_right_leds);
@@ -1650,13 +1646,13 @@ pssense_create(struct xrt_prober *xp,
 
 	u_var_add_gui_header(pssense, &pssense->gui.button_states, "Button States");
 	u_var_add_bool(pssense, &pssense->state.ps_click, "PS Click");
-	if (pssense->hand == PSSENSE_HAND_LEFT) {
+	if (pssense->hand == XRT_HAND_LEFT) {
 		u_var_add_bool(pssense, &pssense->state.share_click, "Share Click");
 		u_var_add_bool(pssense, &pssense->state.square_click, "Square Click");
 		u_var_add_bool(pssense, &pssense->state.square_touch, "Square Touch");
 		u_var_add_bool(pssense, &pssense->state.triangle_click, "Triangle Click");
 		u_var_add_bool(pssense, &pssense->state.triangle_touch, "Triangle Touch");
-	} else if (pssense->hand == PSSENSE_HAND_RIGHT) {
+	} else if (pssense->hand == XRT_HAND_RIGHT) {
 		u_var_add_bool(pssense, &pssense->state.options_click, "Options Click");
 		u_var_add_bool(pssense, &pssense->state.cross_click, "Cross Click");
 		u_var_add_bool(pssense, &pssense->state.cross_touch, "Cross Touch");
