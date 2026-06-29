@@ -239,8 +239,6 @@ struct pssense_device
 		uint64_t device_ticks_total;
 
 		uint32_t last_sent_host_timestamp_us;
-
-		time_duration_ns smoothed_clock_jitter_ns;
 	} timing;
 
 	struct
@@ -395,6 +393,9 @@ pssense_add_clock_offset_sample(struct pssense_device *pssense, double offset_ns
 		delta = CLAMP(delta, -2500.0, 2500.0);
 
 		pssense->timing.filtered_offset_ns += delta;
+
+		t_led_sync_push_host_device_clock_offset(&pssense->tracking.led_sync_refinement,
+		                                         (time_duration_ns)(pssense->timing.filtered_offset_ns));
 	}
 	pssense->timing.last_clock_sample_ns = os_monotonic_get_ns();
 }
@@ -408,12 +409,21 @@ pssense_host_ts_to_device(struct pssense_device *pssense,
 		return false;
 	}
 
-	// Convert host-domain query time to device IMU time using the PSVR2TK clock offset and the LED sync latency
-	// offset. Corresponds to the inverse of PSVR2TK's libpad_deviceToHostHook conversion. See:
-	// PSVR2Toolkit/projects/psvr2_openvr_driver_ex/libpad_hooks.cpp
-	*out_device_timestamp_ns = host_timestamp_ns + (timepoint_ns)(pssense->timing.filtered_offset_ns) +
-	                           pssense->tracking.latest_led_sync_sample.device_host_latency_ns;
-	return true;
+	switch (pssense->tracking.latest_led_sync_sample.timestamp_mode) {
+	case T_LED_SYNC_SAMPLE_TIMESTAMP_MODE_INVALID:
+	case T_LED_SYNC_SAMPLE_TIMESTAMP_MODE_DEVICE_HOST_LATENCY: {
+		*out_device_timestamp_ns = host_timestamp_ns + (timepoint_ns)(pssense->timing.filtered_offset_ns) +
+		                           pssense->tracking.latest_led_sync_sample.timestamp.device_host_latency_ns;
+		return true;
+	}
+	case T_LED_SYNC_SAMPLE_TIMESTAMP_MODE_HOST_DEVICE_CLOCK_OFFSET: {
+		*out_device_timestamp_ns =
+		    host_timestamp_ns + pssense->tracking.latest_led_sync_sample.timestamp.host_device_clock_offset_ns;
+		return true;
+	}
+	}
+
+	return false;
 }
 
 /*!
@@ -1085,35 +1095,17 @@ pssense_timing_event_sink_push(struct t_timing_event_sink *sink, const struct t_
 		(void)ts_valid; // Silence unused variable in release
 
 		next_blink_time += (int64_t)pssense->tracking.timing_fudge_100us * 100 * U_TIME_1US_IN_NS;
-		// Apply the fudge offset, which will line up the blink center with exposure center'
+		// Apply the fudge offset, which will line up the blink center with exposure center
 		next_blink_time += (int64_t)pssense->tracking.latest_led_sync_sample.fudge_offset_ns;
 
-		// PSSENSE cycle position is the *center* of the exposure, but our LED sync assumes it's the start of
-		// the exposure, so we need to offset
+		// PSSENSE cycle position on the wire is the *center* of the exposure, but our LED sync assumes it's the
+		// start of the exposure, so we need to make it blink later to account
 		next_blink_time += PERIOD_ID_TO_DURATION_NS(period_id) / 2;
 
 		// inside thirds of a nanosecond
 		uint32_t cycle_length = pssense->tracking.average_exposure_interval_ns * 3;
 		// in IMU ticks
 		uint32_t cycle_position = NS_TO_IMU_TICKS(next_blink_time);
-
-		uint32_t last_cycle_position = __le32_to_cpu(pssense->tracking.led_settings.cycle_position);
-		if (cycle_position != last_cycle_position) {
-			int64_t jitter = (IMU_TICKS_TO_NS(((int64_t)cycle_position - last_cycle_position))) -
-			                 (int64_t)pssense->tracking.average_exposure_interval_ns;
-
-			if (jitter < (U_TIME_1MS_IN_NS * 3LL) && jitter > -(U_TIME_1MS_IN_NS * 3LL)) {
-				pssense->timing.smoothed_clock_jitter_ns =
-				    ((pssense->timing.smoothed_clock_jitter_ns * 0.9) + (abs((int)jitter) * 0.1));
-
-				time_duration_ns new_minimum_blink_time =
-				    PERIOD_ID_TO_DURATION_NS(STABLE_MIN_PERIOD_ID) +
-				    (int64_t)(pssense->timing.smoothed_clock_jitter_ns * 2);
-
-				t_led_sync_update_minimum_blink_time(&pssense->tracking.led_sync_refinement,
-				                                     new_minimum_blink_time);
-			}
-		}
 
 #if 0
 		static int64_t jitter_integration = 0;
@@ -1136,7 +1128,7 @@ pssense_timing_event_sink_push(struct t_timing_event_sink *sink, const struct t_
 		    .period_id = period_id,
 		};
 
-		if (pssense->tracking.increment_sequence_num && (pssense->tracking.received_frames % 50) == 0) {
+		if (pssense->tracking.increment_sequence_num) {
 			pssense->tracking.led_sequence_num += 1;
 #if 0
 			PSSENSE_DEBUG(pssense, "%lu\t%lu",
@@ -1604,22 +1596,27 @@ pssense_create(struct xrt_prober *xp,
 		return NULL;
 	}
 
-	pssense->tracking.period_id = 32;
+	// @note We don't do blink duration refinement right now because that needs to eventually adjust the latency
+	//       offset as it goes and produces a worse result with the current implementation.
 	struct t_led_sync_refinement_options led_sync_refinement_options = {
-	    .flags = T_LED_SYNC_REFINEMENT_FLAGS_BLINK_DURATION,
-	    .initial_blink_duration_ns = PERIOD_ID_TO_DURATION_NS(pssense->tracking.period_id),
-	    .min_blink_duration_ns = PERIOD_ID_TO_DURATION_NS(STABLE_MIN_PERIOD_ID),
+	    // @todo Once LED blink refinement is fixed, enable that again
+	    .flags = T_LED_SYNC_REFINEMENT_FLAGS_OPTICAL_DRIVEN_OFFSET | T_LED_SYNC_REFINEMENT_FLAGS_HAS_LATENCY_CAP,
+	    .initial_blink_duration_ns = PERIOD_ID_TO_DURATION_NS(9),
+	    .min_blink_duration_ns = PERIOD_ID_TO_DURATION_NS(1),
 	    .max_blink_duration_ns = PERIOD_ID_TO_DURATION_NS(MAX_PERIOD_ID),
 	    .time_to_resync_ns = T_LED_SYNC_DEFAULT_RESYNC_TIME,
-	    .settle_frames = 10,
+	    .settle_frames = 7,
+	    // 8ms latency cap, something a bit overboard for bluetooth but better than searching the whole range
+	    .latency_cap_ns = U_TIME_1MS_IN_NS * 8LL,
 	};
-	pssense->tracking.period_id = DURATION_NS_TO_PERIOD_ID(led_sync_refinement_options.initial_blink_duration_ns);
 	ret = t_led_sync_refinement_init(&pssense->tracking.led_sync_refinement, &led_sync_refinement_options);
 	if (ret != 0) {
 		PSSENSE_ERROR(pssense, "Failed to init LED sync refinement!");
 		pssense_device_destroy(&pssense->base);
 		return NULL;
 	}
+
+	pssense->tracking.period_id = DURATION_NS_TO_PERIOD_ID(led_sync_refinement_options.initial_blink_duration_ns);
 
 	ret = os_thread_helper_init(&pssense->controller_thread);
 	if (ret != 0) {
@@ -1678,7 +1675,6 @@ pssense_create(struct xrt_prober *xp,
 	u_var_add_ro_u64(pssense, &pssense->timing.imu_ticks_total, "Latest IMU Time (ticks)");
 	u_var_add_ro_i64_ns(pssense, &pssense->timing.latest_device_time_ns, "Latest Device Time (ns)");
 	u_var_add_ro_u64(pssense, &pssense->timing.device_ticks_total, "Latest Device Time (ticks)");
-	u_var_add_ro_i64_ns(pssense, &pssense->timing.smoothed_clock_jitter_ns, "Smoothed Clock Jitter (ns)");
 
 	u_var_add_gui_header(pssense, &pssense->gui.tracking, "Tracking");
 	u_var_add_ro_vec3_i32(pssense, &pssense->state.gyro_raw, "Raw Gyro");
