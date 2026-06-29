@@ -3,7 +3,7 @@
 /*!
  * @file
  * @brief  String to enum conversion for XRT enums.
- * @author Tim Bornecrantz <tbornecrantz@nvidia.com>
+ * @author Jakob Bornecrantz <tbornecrantz@nvidia.com>
  * @ingroup aux_util
  */
 
