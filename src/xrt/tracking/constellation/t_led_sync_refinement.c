@@ -36,7 +36,7 @@ DEBUG_GET_ONCE_LOG_OPTION(led_sync_refinement_log, "T_LED_SYNC_REFINEMENT_LOG", 
 static time_duration_ns
 change_good_cutoff(struct t_led_sync_refinement *refinement)
 {
-	return MIN(refinement->current_blink_duration_ns, refinement->exposure_time_ns) / 20;
+	return MIN(refinement->current_blink_duration_ns, refinement->exposure_time_ns) / 50;
 }
 
 //! The amount of frames since the sample was applied to the controller
