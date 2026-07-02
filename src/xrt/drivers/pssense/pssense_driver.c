@@ -145,6 +145,18 @@ enum pssense_input_index
 };
 
 /*!
+ * Parsed calibration data from the PlayStation Sense controller.
+ */
+struct pssense_parsed_calibration
+{
+	struct xrt_vec3 gyro_scale;
+	struct xrt_vec3 accel_scale;
+
+	struct xrt_vec3 accel_bias;
+	struct xrt_vec3_i32 gyro_bias;
+};
+
+/*!
  * PlayStation Sense state parsed from a data packet.
  */
 struct pssense_input_state
@@ -273,6 +285,9 @@ struct pssense_device
 	enum u_logging_level log_level;
 
 	struct os_precise_sleeper sleeper;
+
+	struct pssense_parsed_calibration calibration;
+	bool has_calibration;
 
 	//! Input state parsed from most recent packet
 	struct pssense_input_state state;
@@ -437,17 +452,22 @@ pssense_read_packet_data(struct pssense_device *pssense, uint8_t *buffer, size_t
 static void
 pssense_update_fusion(struct pssense_device *pssense)
 {
-	struct xrt_vec3 gyro;
-	gyro.x = DEG_TO_RAD(pssense->state.gyro_raw.x * PSSENSE_GYRO_SCALE_DEG);
-	gyro.y = DEG_TO_RAD(pssense->state.gyro_raw.y * PSSENSE_GYRO_SCALE_DEG);
-	gyro.z = DEG_TO_RAD(pssense->state.gyro_raw.z * PSSENSE_GYRO_SCALE_DEG);
+	// We don't have calibration yet, so we can't do anything
+	if (!pssense->has_calibration) {
+		return;
+	}
 
-	struct xrt_vec3 accel;
-	accel.x = pssense->state.accel_raw.x * PSSENSE_ACCEL_SCALE;
-	accel.y = pssense->state.accel_raw.y * PSSENSE_ACCEL_SCALE;
-	accel.z = pssense->state.accel_raw.z * PSSENSE_ACCEL_SCALE;
+	struct xrt_vec3 gyro = {
+	    .x = (pssense->state.gyro_raw.x - pssense->calibration.gyro_bias.x) * pssense->calibration.gyro_scale.x,
+	    .y = (pssense->state.gyro_raw.y - pssense->calibration.gyro_bias.y) * pssense->calibration.gyro_scale.y,
+	    .z = (pssense->state.gyro_raw.z - pssense->calibration.gyro_bias.z) * pssense->calibration.gyro_scale.z,
+	};
 
-	// TODO: Apply correction from calibration data
+	struct xrt_vec3 accel = {
+	    .x = (pssense->state.accel_raw.x - pssense->calibration.accel_bias.x) * pssense->calibration.accel_scale.x,
+	    .y = (pssense->state.accel_raw.y - pssense->calibration.accel_bias.y) * pssense->calibration.accel_scale.y,
+	    .z = (pssense->state.accel_raw.z - pssense->calibration.accel_bias.z) * pssense->calibration.accel_scale.z,
+	};
 
 	m_imu_3dof_update(&pssense->tracking.fusion, pssense->timing.latest_imu_time_ns, &accel, &gyro);
 	pssense->tracking.pose.orientation = pssense->tracking.fusion.rot;
@@ -825,13 +845,71 @@ pssense_get_constellation_pose(struct pssense_device *pssense,
 	m_relation_history_get(pssense->tracking.constellation_relation_history, device_ts, out_relation);
 }
 
+static void
+parse_pssense_calibration(const struct pssense_calibration_data *calibration_data,
+                          struct pssense_parsed_calibration *out_parsed)
+{
+	const float rad_per_sec_ref = M_PI * 3.f;
+
+	int16_t gyro_plus_x = __le16_to_cpu(calibration_data->gyro_plus_x);
+	int16_t gyro_minus_x = __le16_to_cpu(calibration_data->gyro_minus_x);
+	int16_t gyro_plus_y = __le16_to_cpu(calibration_data->gyro_plus_y);
+	int16_t gyro_minus_y = __le16_to_cpu(calibration_data->gyro_minus_y);
+	int16_t gyro_plus_z = __le16_to_cpu(calibration_data->gyro_plus_z);
+	int16_t gyro_minus_z = __le16_to_cpu(calibration_data->gyro_minus_z);
+
+	int16_t accel_plus_x = __le16_to_cpu(calibration_data->accel_plus_x);
+	int16_t accel_minus_x = __le16_to_cpu(calibration_data->accel_minus_x);
+	int16_t accel_plus_y = __le16_to_cpu(calibration_data->accel_plus_y);
+	int16_t accel_minus_y = __le16_to_cpu(calibration_data->accel_minus_y);
+	int16_t accel_plus_z = __le16_to_cpu(calibration_data->accel_plus_z);
+	int16_t accel_minus_z = __le16_to_cpu(calibration_data->accel_minus_z);
+
+	struct xrt_vec3_i32 gyro_bias = {
+	    .x = (int16_t)__le16_to_cpu(calibration_data->gyro_bias_x),
+	    .y = (int16_t)__le16_to_cpu(calibration_data->gyro_bias_y),
+	    .z = (int16_t)__le16_to_cpu(calibration_data->gyro_bias_z),
+	};
+
+	float gyro_span_x =
+	    (fabsf((float)gyro_plus_x - (float)gyro_bias.x) + fabsf((float)gyro_minus_x - (float)gyro_bias.x)) / 2.0f;
+	float gyro_span_y =
+	    (fabsf((float)gyro_plus_y - (float)gyro_bias.y) + fabsf((float)gyro_minus_y - (float)gyro_bias.y)) / 2.0f;
+	float gyro_span_z =
+	    (fabsf((float)gyro_plus_z - (float)gyro_bias.z) + fabsf((float)gyro_minus_z - (float)gyro_bias.z)) / 2.0f;
+
+	struct xrt_vec3 gyro_scale = {
+	    .x = rad_per_sec_ref / gyro_span_x,
+	    .y = rad_per_sec_ref / gyro_span_y,
+	    .z = rad_per_sec_ref / gyro_span_z,
+	};
+
+	struct xrt_vec3 accel_bias = {
+	    .x = (accel_plus_x + accel_minus_x) / 2.0f,
+	    .y = (accel_plus_y + accel_minus_y) / 2.0f,
+	    .z = (accel_plus_z + accel_minus_z) / 2.0f,
+	};
+
+	struct xrt_vec3 accel_scale = {
+	    .x = (1.0f / (float)(accel_plus_x - accel_bias.x)) * MATH_GRAVITY_M_S2,
+	    .y = (1.0f / (float)(accel_plus_y - accel_bias.y)) * MATH_GRAVITY_M_S2,
+	    .z = (1.0f / (float)(accel_plus_z - accel_bias.z)) * MATH_GRAVITY_M_S2,
+	};
+
+	(*out_parsed) = XRT_C11_COMPOUND(struct pssense_parsed_calibration){
+	    .gyro_bias = gyro_bias,
+	    .gyro_scale = gyro_scale,
+	    .accel_scale = accel_scale,
+	};
+}
+
 /*!
  * Retrieving the calibration data report will switch the Sense controller from compat mode into full mode.
  */
-bool
+static bool
 pssense_get_calibration_data(struct pssense_device *pssense)
 {
-	uint8_t calibration_data[CALIBRATION_DATA_LENGTH] = {0};
+	struct pssense_calibration_data calibration_data = {0};
 
 	bool invalid_crc;
 	do {
@@ -857,11 +935,11 @@ pssense_get_calibration_data(struct pssense_device *pssense)
 
 			switch (report_buffer.part_id) {
 			case CALIBRATION_DATA_PART_ID_1: {
-				memcpy(calibration_data, report_buffer.data, sizeof(report_buffer.data));
+				memcpy((uint8_t *)&calibration_data, report_buffer.data, sizeof(report_buffer.data));
 				break;
 			}
 			case CALIBRATION_DATA_PART_ID_2: {
-				memcpy(calibration_data + sizeof(report_buffer.data), report_buffer.data,
+				memcpy(((uint8_t *)&calibration_data) + sizeof(report_buffer.data), report_buffer.data,
 				       sizeof(report_buffer.data));
 				break;
 			}
@@ -883,7 +961,10 @@ pssense_get_calibration_data(struct pssense_device *pssense)
 		}
 	} while (invalid_crc);
 
-	// TODO: Parse calibration data into prefiler
+	parse_pssense_calibration(&calibration_data, &pssense->calibration);
+	pssense->has_calibration = true;
+
+	PSSENSE_DEBUG(pssense, "Calibration data retrieved and parsed successfully");
 
 	return true;
 }
@@ -1606,6 +1687,11 @@ pssense_create(struct xrt_prober *xp,
 	u_var_add_gui_header(pssense, &pssense->gui.tracking, "Tracking");
 	u_var_add_ro_vec3_i32(pssense, &pssense->state.gyro_raw, "Raw Gyro");
 	u_var_add_ro_vec3_i32(pssense, &pssense->state.accel_raw, "Raw Accel");
+	u_var_add_bool(pssense, &pssense->has_calibration, "Has Calibration");
+	u_var_add_ro_vec3_i32(pssense, &pssense->calibration.gyro_bias, "Gyro Bias");
+	u_var_add_ro_vec3_f32(pssense, &pssense->calibration.gyro_scale, "Gyro Scale");
+	u_var_add_ro_vec3_f32(pssense, &pssense->calibration.accel_bias, "Accel Bias");
+	u_var_add_ro_vec3_f32(pssense, &pssense->calibration.accel_scale, "Accel Scale");
 	u_var_add_pose(pssense, &pssense->tracking.pose, "Pose");
 	m_imu_3dof_add_vars(&pssense->tracking.fusion, pssense, "3dof Fusion");
 	u_var_add_ro_u32(pssense, &pssense->tracking.received_frames, "Received Frames");
