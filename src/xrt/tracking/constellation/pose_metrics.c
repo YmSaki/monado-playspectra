@@ -298,6 +298,7 @@ pose_metrics_match_pose_to_blobs(const struct xrt_pose *pose,
 
 	// Iterate the blobs and see which ones are within the bounding box and have a matching LED
 	bool all_led_ids_matched = true;
+	int blobs_outside_bounds = 0;
 
 	for (int i = 0; i < num_blobs; i++) {
 		struct t_blob *b = blobs + i;
@@ -311,6 +312,7 @@ pose_metrics_match_pose_to_blobs(const struct xrt_pose *pose,
 		// Ignore blobs that are outside the pose bounding box
 		if (b->center.x < bounds->left || b->center.y < bounds->top || b->center.x > bounds->right ||
 		    b->center.y > bounds->bottom) {
+			blobs_outside_bounds++;
 			continue;
 		}
 
@@ -345,6 +347,12 @@ pose_metrics_match_pose_to_blobs(const struct xrt_pose *pose,
 	}
 
 	match_info->all_led_ids_matched = all_led_ids_matched;
+
+	// If blobs were outside the pose bounding box, this is a degenerate P3P solution that doesn't explain all
+	// observations. Penalize it with worst error to prevent selection
+	if (blobs_outside_bounds > 0 && match_info->matched_blobs <= 3) {
+		match_info->reprojection_error = WORST_REPROJECTION_ERROR;
+	}
 }
 
 void
@@ -472,7 +480,7 @@ pose_metrics_score_is_better_pose(struct pose_metrics *old_score, struct pose_me
 	}
 
 	double new_error_per_led = new_score->reprojection_error / new_score->matched_blobs;
-	double best_error_per_led = 10.0;
+	double best_error_per_led = WORST_REPROJECTION_ERROR;
 
 	if (old_score->matched_blobs > 0) {
 		best_error_per_led = old_score->reprojection_error / old_score->matched_blobs;
