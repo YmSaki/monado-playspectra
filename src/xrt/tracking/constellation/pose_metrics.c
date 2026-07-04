@@ -503,9 +503,13 @@ pose_metrics_score_is_better_pose(struct pose_metrics *old_score, struct pose_me
 	}
 
 	// If both scores have pose priors, prefer the one where the orientation better matches the prior
+	// BUT only if reprojection error is comparable (within 20%)
 	if (POSE_HAS_FLAGS(old_score, POSE_HAD_PRIOR) && POSE_HAS_FLAGS(new_score, POSE_HAD_PRIOR)) {
-		if (m_vec3_len(new_score->orient_error) < m_vec3_len(old_score->orient_error)) {
-			return true;
+		if (old_score->matched_blobs == new_score->matched_blobs &&
+		    new_score->reprojection_error < old_score->reprojection_error * 1.2) {
+			if (m_vec3_len(new_score->orient_error) < m_vec3_len(old_score->orient_error)) {
+				return true;
+			}
 		}
 	}
 
