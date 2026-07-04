@@ -436,8 +436,14 @@ pose_metrics_evaluate_pose_with_prior(struct pose_metrics *score,
 			if (error_per_led < 1.5) {
 				score->match_flags |= POSE_MATCH_STRONG;
 			}
+		} else {
+			LOG_SPEW("Failed prior match within pos (%f, %f, %f) rot (%f, %f, %f)", pos_error_thresh->x,
+			         pos_error_thresh->y, pos_error_thresh->z, rot_error_thresh->x, rot_error_thresh->y,
+			         rot_error_thresh->z);
 		}
 	} else if (prior_must_match) {
+		LOG_SPEW("Pose doesn't match prior, but we require it to do so");
+
 		// If we must match the prior and failed, bail out
 		goto done;
 	} else if (score->visible_leds > 4 && score->matched_blobs > 4 && error_per_led < 3.0 &&
@@ -455,12 +461,20 @@ pose_metrics_evaluate_pose_with_prior(struct pose_metrics *score,
 		if (pose_prior == NULL && error_per_led < 1.5) {
 			score->match_flags |= POSE_MATCH_STRONG;
 		}
+
+		LOG_SPEW("Got good match with %d visible LEDs, %d matched blobs, %d unmatched blobs, error per LED %f",
+		         score->visible_leds, score->matched_blobs, score->unmatched_blobs, error_per_led);
+	} else {
+		LOG_SPEW(
+		    "Failed to get good match with %d visible LEDs, %d matched blobs, %d unmatched blobs, error per "
+		    "LED %f",
+		    score->visible_leds, score->matched_blobs, score->unmatched_blobs, error_per_led);
 	}
 
+done:
 	LOG_SPEW("score for pose is %u matched %u unmatched %u visible %f error", score->matched_blobs,
 	         score->unmatched_blobs, score->visible_leds, score->reprojection_error);
 
-done:
 	if (out_bounds) {
 		*out_bounds = blob_match_info.bounds;
 	}
