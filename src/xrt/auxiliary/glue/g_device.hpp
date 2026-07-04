@@ -94,13 +94,15 @@ struct DeviceFunctions
 };
 
 /*!
- * Helper wrapper for @ref xrt_device, Monado has C style inheritance where the
- * first field is the base class. In order to safely cast the from the parent
- * to the child class it needs to have a standard layout, it is very easy to
- * not have that. So this class, which has standard layout, goes via itself to
- * then using a static_cast to go to the derived class.
+ * CRTP glue wrapper for @ref xrt_device. Relies on standard layout to recover
+ * the derived object from the C struct, and has some requirements and
+ * limitations because of that. See @ref cpp-glue-wrappers for the guide and
+ * conventions for these wrappers.
  *
- * https://en.cppreference.com/w/cpp/types/is_standard_layout
+ * Unlike the other wrappers it wires function pointers selectively: the
+ * `functions` @ref DeviceFunctions bitmask decides which C function pointers
+ * are installed, so `T` only has to implement C++ methods for the features it
+ * turns on.
  */
 template <class T, DeviceFunctions functions> class DeviceBase
 {
@@ -242,10 +244,10 @@ public: // Members
 
 private: // Fields
 	/*!
-	 * C style inheritance, this object has to be first.
-	 *
-	 * We have to do it this way because when we add a field to this class
-	 * and we do C++ style inheritance we lose our standard layout status.
+	 * Wrapped @ref xrt_device. Must be the first data member: a pointer to it is
+	 * then interconvertible with a pointer to this standard-layout base, which
+	 * lets the glue cast a C pointer back to the derived C++ class. See
+	 * @ref cpp-glue-wrappers.
 	 */
 	xrt_device mDevice = {};
 

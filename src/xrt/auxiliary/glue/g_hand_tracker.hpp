@@ -15,7 +15,10 @@
 namespace xrt::util {
 
 /*!
- * Helper wrapper for @ref xrt_hand_tracker.
+ * CRTP glue wrapper for @ref xrt_hand_tracker. Relies on standard layout to
+ * recover the derived object from the C struct, and has some requirements and
+ * limitations because of that. See @ref cpp-glue-wrappers for the guide and
+ * conventions for these wrappers.
  */
 template <class T> class HandTrackerBase
 {
@@ -69,6 +72,12 @@ public: // Methods
 
 
 private: // Members
+	/*!
+	 * Wrapped @ref xrt_hand_tracker. Must be the first data member: a pointer to
+	 * it is then interconvertible with a pointer to this standard-layout base,
+	 * which lets the glue cast a C pointer back to the derived C++ class. See
+	 * @ref cpp-glue-wrappers.
+	 */
 	xrt_hand_tracker mHandTracker = {};
 
 
