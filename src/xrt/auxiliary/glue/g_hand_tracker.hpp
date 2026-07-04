@@ -99,7 +99,7 @@ private: // Functions
 	static void
 	destroyHandTrackerWrap(struct xrt_hand_tracker *xht) noexcept
 	try {
-		GET(xht).destroyHandTracker();
+		T::destroyHandTracker(xht);
 	}
 	G_CATCH_GUARDS_VOID
 
