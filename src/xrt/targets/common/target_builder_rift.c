@@ -182,13 +182,13 @@ rift_estimate_system(struct xrt_builder *xb,
 
 #ifdef XRT_BUILD_DRIVER_PSSENSE
 	struct xrt_prober_device *dev_controller_left =
-	    u_builder_find_prober_device(xpdevs, xpdev_count, PSSENSE_VID, PSSENSE_PID_LEFT, XRT_BUS_TYPE_BLUETOOTH);
+	    u_builder_find_prober_device(xpdevs, xpdev_count, PSSENSE_VID, PSSENSE_PID_LEFT, XRT_BUS_TYPE_ANY);
 	if (dev_controller_left != NULL) {
 		estimate->certain.left = true;
 	}
 
 	struct xrt_prober_device *dev_controller_right =
-	    u_builder_find_prober_device(xpdevs, xpdev_count, PSSENSE_VID, PSSENSE_PID_RIGHT, XRT_BUS_TYPE_BLUETOOTH);
+	    u_builder_find_prober_device(xpdevs, xpdev_count, PSSENSE_VID, PSSENSE_PID_RIGHT, XRT_BUS_TYPE_ANY);
 	if (dev_controller_right != NULL) {
 		estimate->certain.right = true;
 	}
@@ -227,7 +227,7 @@ rift_open_pssense(struct rift_builder *rb,
 	    xpdev_count,                                                     //
 	    PSSENSE_VID,                                                     //
 	    PSSENSE_PID_LEFT,                                                //
-	    XRT_BUS_TYPE_BLUETOOTH);
+	    XRT_BUS_TYPE_ANY);
 
 	if (left_xpdev != NULL) {
 		struct t_timing_event_sink *timing_sink;
@@ -251,7 +251,7 @@ rift_open_pssense(struct rift_builder *rb,
 	    xpdev_count,                                                      //
 	    PSSENSE_VID,                                                      //
 	    PSSENSE_PID_RIGHT,                                                //
-	    XRT_BUS_TYPE_BLUETOOTH);
+	    XRT_BUS_TYPE_ANY);
 
 	if (right_xpdev != NULL) {
 		struct t_timing_event_sink *timing_sink;
