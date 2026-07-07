@@ -179,23 +179,25 @@ Context::create(const std::string &steam_install,
 }
 
 Context::Context(const std::string &steam_install, const std::string &steamvr_install, u_logging_level level)
-    : settings(steam_install, steamvr_install, this), resources(level, steamvr_install), log_level(level), run(true),
-      frame_thread([this] {
-	      while (this->run.load()) {
+    : settings(steam_install, steamvr_install, this), resources(level, steamvr_install), log_level(level),
+      frame_thread_run(true), frame_thread([this] {
+	      while (this->frame_thread_run.load()) {
 		      using namespace std::chrono_literals;
 		      // SteamVR calls `RunFrame()` approximately every 10.1ms
 		      const std::chrono::time_point<std::chrono::steady_clock> next =
 		          std::chrono::steady_clock::now() + 10ms;
 		      for (vr::IServerTrackedDeviceProvider *const &provider : this->providers)
 			      provider->RunFrame();
-		      std::this_thread::sleep_until(next);
+		      this->frame_thread_event.try_acquire_until(next);
 	      }
       })
 {}
 
 Context::~Context()
 {
-	if (this->run.store(false); this->frame_thread.joinable())
+	this->frame_thread_run.store(false);
+	this->frame_thread_event.release();
+	if (this->frame_thread.joinable())
 		this->frame_thread.join();
 	for (vr::IServerTrackedDeviceProvider *const &provider : providers)
 		provider->Cleanup();
@@ -425,19 +427,26 @@ Context::VsyncEvent(double vsyncTimeOffsetSeconds)
 {}
 
 void
+Context::add_event_locked(vr::VREvent_t event)
+{
+	this->events.emplace_back(std::chrono::steady_clock::now(), event);
+	this->frame_thread_event.try_acquire();
+	this->frame_thread_event.release();
+}
+
+void
 Context::VendorSpecificEvent(uint32_t unWhichDevice,
                              vr::EVREventType eventType,
                              const vr::VREvent_Data_t &eventData,
                              double eventTimeOffset)
 {
 	std::lock_guard lk(event_queue_mut);
-	events.push_back({std::chrono::steady_clock::now(),
-	                  {
-	                      .eventType = eventType,
-	                      .trackedDeviceIndex = unWhichDevice,
-	                      .eventAgeSeconds = {},
-	                      .data = eventData,
-	                  }});
+	this->add_event_locked({
+	    .eventType = eventType,
+	    .trackedDeviceIndex = unWhichDevice,
+	    .eventAgeSeconds = {},
+	    .data = eventData,
+	});
 }
 
 bool
@@ -466,7 +475,7 @@ Context::add_haptic_event(vr::VREvent_HapticVibration_t event, const size_t old_
 			old_event->eventType = vr::EVREventType::VREvent_None;
 		}
 	}
-	events.emplace_back(std::chrono::steady_clock::now(), e);
+	this->add_event_locked(e);
 	return events_tail + events.size() - 1;
 }
 

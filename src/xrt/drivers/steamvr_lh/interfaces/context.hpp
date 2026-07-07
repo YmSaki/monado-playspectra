@@ -111,8 +111,12 @@ public:
 	const u_logging_level log_level;
 
 private:
-	std::atomic<bool> run;
+	std::atomic<bool> frame_thread_run;
+	std::binary_semaphore frame_thread_event{0};
 	std::thread frame_thread;
+
+	void
+	add_event_locked(vr::VREvent_t event);
 
 public:
 	~Context();
