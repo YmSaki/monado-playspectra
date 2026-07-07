@@ -27,7 +27,7 @@ extern "C" {
 #define RIFT_BLOBWATCH_BLOB_REQUIRED_THRESHOLD 0x40
 #define RIFT_BLOBWATCH_DEFAULT_MAX_MATCH_DIST 50.0f
 // @todo Revisit this number.
-#define RIFT_BLOBWATCH_DEFAULT_MAX_BLOB_WIDTH 20
+#define RIFT_BLOBWATCH_DEFAULT_MAX_BLOB_WIDTH 50
 
 struct t_rift_blobwatch_params
 {
