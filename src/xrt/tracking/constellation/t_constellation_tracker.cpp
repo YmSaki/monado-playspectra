@@ -115,10 +115,9 @@ CameraSample::MarkMatchingBlobs(ConstellationTracker *ct,
 	// First clear existing blob labels for this device
 	for (uint32_t i = 0; i < this->blob_count; i++) {
 		t_blob &b = this->blobs[i];
-		t_constellation_device_id_t led_object_id = b.matched_device_id;
 
 		// Skip blobs which already have an ID not belonging to this device
-		if (led_object_id != device_id) {
+		if (b.matched_device_id != device_id) {
 			continue;
 		}
 
@@ -596,15 +595,15 @@ Camera::PushPose(CameraSample &camera_sample,
 
 	ConstellationTracker *tracker = this->tracker;
 
-	{ // Match visible blobs to the pose we found
+	// Match visible blobs to the pose we found, but only if we are doing an optimization after.
+	// The reason we only do this when optimizing is because when not optimizing, an optimization has already
+	// occurred and so outliers have been unmarked, don't re-mark them.
+	if (optimize) {
 		pose_metrics_blob_match_info blob_match_info;
 		pose_metrics_match_pose_to_blobs(&Tcv_cam_device, camera_sample.blobs, camera_sample.blob_count,
 		                                 &device->params.led_model, device->id, &this->model, &blob_match_info);
 
 		camera_sample.MarkMatchingBlobs(tracker, device->params.led_model, device->id, blob_match_info);
-
-		auto tbo = camera_sample.ToBlobObservation();
-		t_blobwatch_mark_blob_device(camera_sample.source, &tbo, device->id);
 	}
 
 	// Try to optimize the pose
@@ -633,6 +632,11 @@ Camera::PushPose(CameraSample &camera_sample,
 		pose_metrics_evaluate_pose(&score, &Tcv_cam_device, camera_sample.blobs, camera_sample.blob_count,
 		                           &device->params.led_model, device->id, &this->model, NULL);
 	}
+
+	// Call back to the blobwatch to update the blobs for this device. Done after pose optimization since the RANSAC
+	// process will change which blobs are considered inliers.
+	auto tbo = camera_sample.ToBlobObservation();
+	t_blobwatch_mark_blob_device(camera_sample.source, &tbo, device->id);
 
 	// Move to OpenXR space
 	xrt_pose Txr_cam_device;
