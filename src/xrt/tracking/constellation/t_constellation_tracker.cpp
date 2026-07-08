@@ -49,6 +49,19 @@ get_pose_gravity_vector(xrt_pose &T_world_pose, xrt_vec3 &gravity)
 	math_quat_rotate_vec3(&T_pose_world_orientation, &gravity, &gravity);
 }
 
+static uint32_t
+num_blobs_for_device(CameraSample &sample, t_constellation_device_id_t device_id)
+{
+	uint32_t out_num_blobs = 0;
+	for (uint32_t i = 0; i < sample.blob_count; i++) {
+		t_blob &b = sample.blobs[i];
+		if (b.matched_device_id == device_id) {
+			out_num_blobs++;
+		}
+	}
+	return out_num_blobs;
+}
+
 /*
  *
  * CameraSample implementations
@@ -268,8 +281,7 @@ Camera::TryDevicePose(std::unique_ptr<Device> &device,
                       DeviceState &device_state,
                       xrt_pose &Tcv_cam_world,
                       std::optional<xrt_pose> &Tcv_world_device_prior,
-                      xrt_pose &Tcv_world_device_candidate,
-                      xrt_pose &Tcv_cam_device_found)
+                      xrt_pose &Tcv_world_device_candidate)
 {
 	xrt_pose Tcv_cam_device_candidate;
 	math_pose_transform(&Tcv_cam_world, &Tcv_world_device_candidate, &Tcv_cam_device_candidate);
@@ -290,8 +302,12 @@ Camera::TryDevicePose(std::unique_ptr<Device> &device,
 
 
 	if (POSE_HAS_FLAGS(&score, POSE_MATCH_GOOD | POSE_MATCH_LED_IDS)) {
-		this->PushPose(sample, device_state, device, score, Tcv_cam_device_candidate, true);
-		Tcv_cam_device_found = Tcv_cam_device_candidate;
+		this->PushPose(sample,                   //
+		               device_state,             //
+		               device,                   //
+		               score,                    //
+		               Tcv_cam_device_candidate, //
+		               false);                   //
 		return true;
 	}
 
@@ -303,8 +319,7 @@ Camera::TryDeviceBlobRecovery(std::unique_ptr<Device> &device,
                               CameraSample &sample,
                               DeviceState &device_state,
                               xrt_pose &Tcv_cam_world,
-                              std::optional<xrt_pose> &Tcv_world_device_prior,
-                              xrt_pose &Tcv_cam_device_found)
+                              std::optional<xrt_pose> &Tcv_world_device_prior)
 {
 	auto tracker = this->tracker;
 
@@ -356,8 +371,12 @@ Camera::TryDeviceBlobRecovery(std::unique_ptr<Device> &device,
 	if (POSE_HAS_FLAGS(&score, POSE_MATCH_GOOD)) {
 		CT_DEBUG(tracker, "Camera %p RANSAC-PnP recovered pose for device %d from %u blobs", (void *)this,
 		         device->id, sample.blob_count);
-		this->PushPose(sample, device_state, device, score, Tcv_cam_device, false);
-		Tcv_cam_device_found = Tcv_cam_device;
+		this->PushPose(sample,         //
+		               device_state,   //
+		               device,         //
+		               score,          //
+		               Tcv_cam_device, //
+		               true);          //
 
 		return true;
 	}
@@ -453,7 +472,12 @@ Camera::SlowSampleProcess(CameraSample &sample)
 		    device->gravity_error_rad,                         //
 		    &score);                                           //
 		if (found_pose) {
-			this->PushPose(sample, *device_state, device, score, Tcv_cam_device, true);
+			this->PushPose(sample,         //
+			               *device_state,  //
+			               device,         //
+			               score,          //
+			               Tcv_cam_device, //
+			               false);         //
 
 			// We found a pose for this device in this sample
 			device_state->needs_slow_processing = false;
@@ -522,11 +546,9 @@ Camera::FastSampleProcess(CameraSample &sample)
 		                                          ? std::optional<xrt_pose>(device_predicted_relation.pose)
 		                                          : std::nullopt;
 
-		xrt_pose Tcv_cam_device_found;
-
 		bool wipe_blob_associations = false;
-		if (this->TryDeviceBlobRecovery(device, sample, device_state, Tcv_cam_world, Tcv_world_device_predicted,
-		                                Tcv_cam_device_found)) {
+		if (this->TryDeviceBlobRecovery(device, sample, device_state, Tcv_cam_world,
+		                                Tcv_world_device_predicted)) {
 			CT_DEBUG(tracker, "Fast processing for device %d succeeded with blob recovery", device->id);
 			continue; // try the next device, we found a pose!
 		} else {
@@ -536,7 +558,7 @@ Camera::FastSampleProcess(CameraSample &sample)
 		// if we have a valid prior pose, try to use it for fast matching
 		if (Tcv_world_device_predicted.has_value() &&
 		    this->TryDevicePose(device, sample, device_state, Tcv_cam_world, Tcv_world_device_predicted,
-		                        Tcv_world_device_predicted.value(), Tcv_cam_device_found)) {
+		                        Tcv_world_device_predicted.value())) {
 			CT_DEBUG(tracker, "Fast processing for device %d succeeded", device->id);
 			continue; // try the next device, we found a pose!
 		}
@@ -554,9 +576,8 @@ Camera::FastSampleProcess(CameraSample &sample)
 			}
 		}
 
-		if (has_last_known &&
-		    this->TryDevicePose(device, sample, device_state, Tcv_cam_world, Tcv_world_device_predicted,
-		                        Tcv_world_device_last_known, Tcv_cam_device_found)) {
+		if (has_last_known && this->TryDevicePose(device, sample, device_state, Tcv_cam_world,
+		                                          Tcv_world_device_predicted, Tcv_world_device_last_known)) {
 			CT_DEBUG(tracker, "Fast processing for device %d succeeded with last known pose", device->id);
 			continue; // try the next device, we found a pose!
 		}
@@ -601,26 +622,27 @@ Camera::PushPose(CameraSample &camera_sample,
                  std::unique_ptr<Device> &device,
                  pose_metrics &score,
                  xrt_pose &Tcv_cam_device,
-                 bool optimize)
+                 bool was_optimized)
 {
 	// We should never find two poses for the same device in a single frame
 	assert(device_state.found_pose.has_value() == false);
 
 	ConstellationTracker *tracker = this->tracker;
 
-	// Match visible blobs to the pose we found, but only if we are doing an optimization after.
-	// The reason we only do this when optimizing is because when not optimizing, an optimization has already
-	// occurred and so outliers have been unmarked, don't re-mark them.
-	if (optimize) {
-		pose_metrics_blob_match_info blob_match_info;
-		pose_metrics_match_pose_to_blobs(&Tcv_cam_device, camera_sample.blobs, camera_sample.blob_count,
-		                                 &device->params.led_model, device->id, &this->model, &blob_match_info);
+	uint32_t blobs_marked_before_update = num_blobs_for_device(camera_sample, device->id);
 
-		camera_sample.MarkMatchingBlobs(tracker, device->params.led_model, device->id, blob_match_info);
-	}
+	// Match visible blobs to the pose we found
+	pose_metrics_blob_match_info blob_match_info;
+	pose_metrics_match_pose_to_blobs(&Tcv_cam_device, camera_sample.blobs, camera_sample.blob_count,
+	                                 &device->params.led_model, device->id, &this->model, &blob_match_info);
 
-	// Try to optimize the pose
-	if (optimize) {
+	// Mark all the new blobs using the match info
+	camera_sample.MarkMatchingBlobs(tracker, device->params.led_model, device->id, blob_match_info);
+
+	// Only do an optimization if we haven't already optimized, or we marked new blobs.
+	// This prevents us from optimizing a pose multiple times in a single frame.
+	if (!was_optimized || num_blobs_for_device(camera_sample, device->id) > blobs_marked_before_update) {
+		// Try to optimize the pose again, unmarking outliers
 		uint32_t num_leds_out;
 		uint32_t num_inliers;
 		if (!ransac_pnp_pose(tracker->log_level, &Tcv_cam_device, camera_sample.blobs, camera_sample.blob_count,
@@ -633,8 +655,7 @@ Camera::PushPose(CameraSample &camera_sample,
 		} else {
 			CT_DEBUG(tracker,
 			         "Camera %d (group %d) RANSAC-PnP refinement for device %d from %u "
-			         "blobs had "
-			         "%d LEDs with %d inliers. Produced pose %f,%f,%f,%f pos %f,%f,%f",
+			         "blobs had %d LEDs with %d inliers. Produced pose %f,%f,%f,%f pos %f,%f,%f",
 			         0, 0, device->id, camera_sample.blob_count, num_leds_out, num_inliers,
 			         Tcv_cam_device.orientation.x, Tcv_cam_device.orientation.y,
 			         Tcv_cam_device.orientation.z, Tcv_cam_device.orientation.w, Tcv_cam_device.position.x,
@@ -647,7 +668,7 @@ Camera::PushPose(CameraSample &camera_sample,
 	}
 
 	// Call back to the blobwatch to update the blobs for this device. Done after pose optimization since the RANSAC
-	// process will change which blobs are considered inliers.
+	// process will unlabel any outliers.
 	auto tbo = camera_sample.ToBlobObservation();
 	t_blobwatch_mark_blob_device(camera_sample.source, &tbo, device->id);
 

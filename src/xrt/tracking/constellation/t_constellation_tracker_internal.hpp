@@ -276,16 +276,14 @@ public: // Methods (t_constellation_tracker.cpp)
 	              DeviceState &device_state,
 	              xrt_pose &Tcv_cam_world,
 	              std::optional<xrt_pose> &Tcv_world_device_prior,
-	              xrt_pose &Tcv_world_device_candidate,
-	              xrt_pose &Tcv_cam_device_found);
+	              xrt_pose &Tcv_world_device_candidate);
 
 	bool
 	TryDeviceBlobRecovery(std::unique_ptr<Device> &device,
 	                      CameraSample &sample,
 	                      DeviceState &device_state,
 	                      xrt_pose &Tcv_cam_world,
-	                      std::optional<xrt_pose> &Tcv_world_device_prior,
-	                      xrt_pose &Tcv_cam_device_found);
+	                      std::optional<xrt_pose> &Tcv_world_device_prior);
 
 	void
 	SlowSampleProcess(CameraSample &sample);
@@ -300,7 +298,7 @@ public: // Methods (t_constellation_tracker.cpp)
 	         std::unique_ptr<Device> &device,
 	         pose_metrics &score,
 	         xrt_pose &Tcv_cam_device,
-	         bool optimize);
+	         bool was_optimized);
 
 public: // Public (constellation_debug_scribble.cpp)
 	void
