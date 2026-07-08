@@ -13,6 +13,7 @@
 
 #include "xrt/xrt_defines.h"
 #include "xrt/xrt_frame.h"
+#include "xrt/xrt_config_build.h"
 
 #include "util/u_logging.h"
 #include "util/u_misc.h"
@@ -26,6 +27,10 @@
 #include "math/m_api.h"
 
 #include "t_rift_blobwatch.h"
+
+#ifdef XRT_FEATURE_RERUN
+#include "constellation_tracker_rerun_blobwatch.h"
+#endif
 
 #include <string.h>
 
@@ -188,6 +193,13 @@ struct t_rift_blobwatch
 	struct blobservation_queue observation_q;
 
 	struct blobservation *last_observation;
+
+	struct
+	{
+		struct t_constellation_tracker *tracker;
+		uint32_t mosaic_index;
+		uint32_t camera_index;
+	} rerun;
 };
 
 static inline struct t_rift_blobwatch *
@@ -488,6 +500,13 @@ blobwatch_process(struct t_rift_blobwatch *bw, struct xrt_frame *frame, struct b
 {
 	os_mutex_lock(&bw->mutex);
 	struct blobservation *ob = pop_queue(&bw->observation_q);
+
+#ifdef XRT_FEATURE_RERUN
+	if (bw->rerun.tracker) {
+		constellation_tracker_rerun_blobwatch_push_frame(bw->rerun.tracker, bw->rerun.mosaic_index,
+		                                                 bw->rerun.camera_index, frame);
+	}
+#endif
 	os_mutex_unlock(&bw->mutex);
 
 	assert(ob != NULL);
@@ -860,3 +879,22 @@ t_rift_blobwatch_create(const struct t_rift_blobwatch_params *params,
 
 	return 0;
 }
+
+#ifdef XRT_FEATURE_RERUN
+void
+t_rift_blobwatch_set_rerun_data(struct t_blobwatch *tbw,
+                                struct t_constellation_tracker *tracker,
+                                uint32_t mosaic_index,
+                                uint32_t camera_index)
+{
+	struct t_rift_blobwatch *bw = t_rift_blobwatch(tbw);
+
+	os_mutex_lock(&bw->mutex);
+	{
+		bw->rerun.tracker = tracker;
+		bw->rerun.mosaic_index = mosaic_index;
+		bw->rerun.camera_index = camera_index;
+	}
+	os_mutex_unlock(&bw->mutex);
+}
+#endif

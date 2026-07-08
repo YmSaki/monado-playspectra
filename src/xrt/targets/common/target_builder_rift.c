@@ -8,6 +8,7 @@
  * @ingroup xrt_iface
  */
 
+#include "xrt/xrt_config_build.h"
 #include "xrt/xrt_config_drivers.h"
 #include "xrt/xrt_prober.h"
 #include "xrt/xrt_frameserver.h"
@@ -590,6 +591,10 @@ rift_open_system_impl(struct xrt_builder *xb,
 				RIFT_WARN(rb, "Failed to create Rift blobwatch for sensor %u with code %d", i, ret);
 				continue;
 			}
+
+#ifdef XRT_FEATURE_RERUN
+			t_rift_blobwatch_set_rerun_data(*blobwatch, rb->constellation_tracker, 0, rb->num_sensors);
+#endif
 
 			u_sink_create_format_converter(xfctx, XRT_FORMAT_L8, frame_sink, &frame_sink);
 

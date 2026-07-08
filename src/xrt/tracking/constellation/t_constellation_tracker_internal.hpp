@@ -407,6 +407,12 @@ public: // Methods
 		return static_cast<ConstellationTracker *>(container_of(node, ConstellationTrackerBase, node));
 	}
 
+	static ConstellationTracker *
+	Get(t_constellation_tracker *tracker)
+	{
+		return reinterpret_cast<ConstellationTracker *>(tracker);
+	}
+
 	ConstellationTracker(t_constellation_tracker_params *params);
 
 	~ConstellationTracker();

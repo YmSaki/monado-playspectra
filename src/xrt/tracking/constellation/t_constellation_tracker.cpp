@@ -1096,7 +1096,7 @@ t_constellation_tracker_add_device(t_constellation_tracker *raw_tracker,
                                    t_constellation_tracker_device *device,
                                    t_constellation_device_id_t *out_device_id)
 {
-	ConstellationTracker *tracker = (ConstellationTracker *)raw_tracker;
+	ConstellationTracker *tracker = ConstellationTracker::Get(raw_tracker);
 
 	try {
 		t_constellation_device_id_t device_id = tracker->AddDevice(params, device);
@@ -1112,12 +1112,12 @@ t_constellation_tracker_add_device(t_constellation_tracker *raw_tracker,
 int
 t_constellation_tracker_remove_device(t_constellation_tracker *raw_tracker, t_constellation_device_id_t device)
 {
-	ConstellationTracker *tracker = (ConstellationTracker *)raw_tracker;
+	ConstellationTracker *tracker = ConstellationTracker::Get(raw_tracker);
 
 	try {
 		tracker->RemoveDevice(device);
 	} catch (const std::exception &e) {
-		CT_ERROR(tracker, "Failed to add device to constellation tracker: %s", e.what());
+		CT_ERROR(tracker, "Failed to remove device from constellation tracker: %s", e.what());
 		return -1;
 	}
 
@@ -1127,7 +1127,7 @@ t_constellation_tracker_remove_device(t_constellation_tracker *raw_tracker, t_co
 xrt_tracking_origin *
 t_constellation_tracker_get_tracking_origin(t_constellation_tracker *raw_tracker)
 {
-	ConstellationTracker *tracker = (ConstellationTracker *)raw_tracker;
+	ConstellationTracker *tracker = ConstellationTracker::Get(raw_tracker);
 
 	return &tracker->tracking_origin;
 }

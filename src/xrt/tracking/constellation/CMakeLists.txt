@@ -52,7 +52,8 @@ if(XRT_FEATURE_RERUN)
 	target_link_libraries(constellation PRIVATE rerun_sdk)
 
 	target_sources(
-		constellation PRIVATE constellation_tracker_rerun.cpp
-				      constellation_tracker_rerun.hpp
+		constellation
+		PRIVATE constellation_tracker_rerun.cpp constellation_tracker_rerun.hpp
+			constellation_tracker_rerun_blobwatch.h
 		)
 endif()

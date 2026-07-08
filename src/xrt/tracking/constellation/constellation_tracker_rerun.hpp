@@ -45,6 +45,19 @@ public: // Methods
 	void
 	LogSample(const ConstellationTracker &tracker, const CameraSample &camera_sample);
 
+	/*!
+	 * Logs a camera's image frame to rerun.
+	 *
+	 * @param mosaic_index The index of the mosaic the camera belongs to.
+	 * @param camera_index The index of the camera in the mosaic.
+	 * @param frame        The camera's image frame.
+	 */
+	void
+	LogImageFrame(const ConstellationTracker &tracker,
+	              uint32_t mosaic_index,
+	              uint32_t camera_index,
+	              const xrt_frame &frame);
+
 private: // Methods
 	void
 	LogStaticScene(const CameraSample &camera_sample, const t_camera_calibration &calibration);

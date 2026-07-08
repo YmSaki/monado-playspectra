@@ -9,8 +9,14 @@
 
 #pragma once
 
-#include "tracking/t_constellation.h"
+#include "xrt/xrt_config_build.h"
 
+#include "constellation/t_constellation_tracker.h"
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct t_rift_blobwatch_params
 {
@@ -38,3 +44,18 @@ t_rift_blobwatch_create(const struct t_rift_blobwatch_params *params,
                         struct t_blob_sink *blob_sink,
                         struct xrt_frame_sink **out_frame_sink,
                         struct t_blobwatch **out_blobwatch);
+
+#ifdef XRT_FEATURE_RERUN
+/*!
+ * Sets data to allow the blobwatch to send data to Rerun.
+ */
+void
+t_rift_blobwatch_set_rerun_data(struct t_blobwatch *tbw,
+                                struct t_constellation_tracker *tracker,
+                                uint32_t mosaic_index,
+                                uint32_t camera_index);
+#endif
+
+#ifdef __cplusplus
+}
+#endif
