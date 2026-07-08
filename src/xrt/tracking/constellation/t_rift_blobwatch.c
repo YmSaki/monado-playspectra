@@ -234,8 +234,10 @@ compute_greysum(
 		return;
 	}
 
-	*led_x = (float)(greysum_x) / greysum_total - 1;
-	*led_y = (float)(greysum_y) / greysum_total - 1;
+	// Add half a pixel to the result to get the center of the pixel,
+	// and subtract 1 to convert from 1-based to 0-based coordinates
+	*led_x = ((float)(greysum_x) / greysum_total - 1) + 0.5f;
+	*led_y = ((float)(greysum_y) / greysum_total - 1) + 0.5f;
 }
 
 /*
