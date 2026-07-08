@@ -628,6 +628,10 @@ Camera::PushPose(CameraSample &camera_sample,
 			         Tcv_cam_device.orientation.z, Tcv_cam_device.orientation.w, Tcv_cam_device.position.x,
 			         Tcv_cam_device.position.y, Tcv_cam_device.position.z);
 		}
+
+		// We need to re-evaluate the pose after optimization, since the reprojection error may have changed.
+		pose_metrics_evaluate_pose(&score, &Tcv_cam_device, camera_sample.blobs, camera_sample.blob_count,
+		                           &device->params.led_model, device->id, &this->model, NULL);
 	}
 
 	// Move to OpenXR space
@@ -674,6 +678,13 @@ Camera::PushPose(CameraSample &camera_sample,
 	xrt_pose Txr_world_device;
 	math_pose_transform(&Txr_world_cam.value(), &Txr_cam_device, &Txr_world_device);
 
+	// Compute the metrics
+	t_constellation_tracker_sample_metrics metrics = {
+	    .matched_blob_count = score.matched_blobs,
+	    .visible_led_count = score.visible_leds,
+	    .reprojection_error = score.matched_blobs > 0 ? sqrtf(score.reprojection_error / score.matched_blobs) : 0.0,
+	};
+
 	// Push the sample to the device
 	t_constellation_tracker_sample sample = {
 	    .timestamp_ns = camera_sample.timestamp_ns,
@@ -681,6 +692,7 @@ Camera::PushPose(CameraSample &camera_sample,
 	    .mosaic_index = mosaic->index,
 	    .camera_index = this->index,
 	    .average_brightness = average_brightness, // @todo compute this
+	    .metrics = metrics,
 	};
 	t_constellation_tracker_device_push_sample(device->device, &sample);
 
