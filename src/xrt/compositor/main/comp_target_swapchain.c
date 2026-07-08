@@ -935,7 +935,17 @@ comp_target_swapchain_present(struct comp_target *ct,
 	    .swapchainCount = 1,
 	    .pPresentIds = &present_id,
 	};
+#endif
 
+#ifdef VK_KHR_present_id
+	VkPresentIdKHR vk_present_id = {
+	    .sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR,
+	    .swapchainCount = 1,
+	    .pPresentIds = &present_id,
+	};
+#endif
+
+#ifdef VK_KHR_present_id2
 	if (cts->present_id2_supported && vk->features.present_wait) {
 		vk_append_to_pnext_chain((VkBaseInStructure *)&present_info, (VkBaseInStructure *)&vk_present_id2);
 	} else
@@ -943,12 +953,6 @@ comp_target_swapchain_present(struct comp_target *ct,
 
 #ifdef VK_KHR_present_id
 	{
-		VkPresentIdKHR vk_present_id = {
-		    .sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR,
-		    .swapchainCount = 1,
-		    .pPresentIds = &present_id,
-		};
-
 		if (vk->features.present_id && vk->features.present_wait) {
 			vk_append_to_pnext_chain((VkBaseInStructure *)&present_info,
 			                         (VkBaseInStructure *)&vk_present_id);
