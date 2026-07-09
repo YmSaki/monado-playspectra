@@ -10,6 +10,7 @@
 
 #include "xrt/xrt_hand_tracker.h"
 #include "g_catch_guard.hpp"
+#include "g_traits.hpp"
 
 #include <type_traits>
 
@@ -29,6 +30,8 @@ public: // Methods
 	{
 		static_assert(std::is_standard_layout_v<HandTrackerBase>,
 		              "glue base must be standard layout for pointer recovery");
+		static_assert(is_non_virtual_base_v<HandTrackerBase, T>,
+		              "glue base must be a non-virtual base of T for pointer recovery");
 
 		auto &xht = *getXHT();
 
