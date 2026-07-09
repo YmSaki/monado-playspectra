@@ -14,6 +14,8 @@
 #include "util/u_device.h"
 #include "g_catch_guard.hpp"
 
+#include <type_traits>
+
 
 namespace xrt::util {
 
@@ -112,6 +114,9 @@ public: // Members
 	 */
 	DeviceBase() noexcept
 	{
+		static_assert(std::is_standard_layout_v<DeviceBase>,
+		              "glue base must be standard layout for pointer recovery");
+
 		// Setup function for the device.
 		auto &xdev = *getXDev();
 

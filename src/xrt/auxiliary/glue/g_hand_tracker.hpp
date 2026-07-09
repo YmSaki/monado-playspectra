@@ -11,6 +11,8 @@
 #include "xrt/xrt_hand_tracker.h"
 #include "g_catch_guard.hpp"
 
+#include <type_traits>
+
 
 namespace xrt::util {
 
@@ -25,6 +27,9 @@ template <class T> class HandTrackerBase
 public: // Methods
 	HandTrackerBase() noexcept
 	{
+		static_assert(std::is_standard_layout_v<HandTrackerBase>,
+		              "glue base must be standard layout for pointer recovery");
+
 		auto &xht = *getXHT();
 
 		xht.locate = locateWrap;
