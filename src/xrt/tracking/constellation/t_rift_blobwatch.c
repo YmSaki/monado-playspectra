@@ -85,11 +85,11 @@ struct blob
  */
 struct blobservation
 {
-	int num_blobs;
+	uint32_t num_blobs;
 	struct blob blobs[XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME];
 	uint8_t tracked[XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME];
 
-	int dropped_dark_blobs;
+	uint32_t dropped_dark_blobs;
 
 	timepoint_ns timestamp_ns;
 };
@@ -131,7 +131,7 @@ struct extent_line
 struct blobservation_queue
 {
 	struct blobservation *data[QUEUE_ENTRIES];
-	unsigned int head, tail;
+	uint32_t head, tail;
 };
 
 static void
@@ -143,7 +143,7 @@ init_queue(struct blobservation_queue *q)
 static void
 push_queue(struct blobservation_queue *q, struct blobservation *b)
 {
-	unsigned int next = (q->tail + 1) % QUEUE_ENTRIES;
+	uint32_t next = (q->tail + 1) % QUEUE_ENTRIES;
 	assert(next != q->head); // Check there's room
 	assert(b != NULL);
 	q->data[q->tail] = b;
@@ -154,7 +154,7 @@ static struct blobservation *
 pop_queue(struct blobservation_queue *q)
 {
 	struct blobservation *b;
-	unsigned int next_head = (q->head + 1) % QUEUE_ENTRIES;
+	uint32_t next_head = (q->head + 1) % QUEUE_ENTRIES;
 
 	if ((q)->tail == (q)->head) { // Check there's something in the queue
 		return NULL;
@@ -184,9 +184,11 @@ struct t_rift_blobwatch
 	struct t_rift_blobwatch_params params;
 	int blob_max_wh;
 
+	/*!
+	 * Cached square of the maximum distance for matching a blob between frames,
+	 * to avoid sqrt in a hot path.
+	 */
 	float max_match_dist_sq;
-
-	bool debug;
 
 	struct blobservation observations[NUM_FRAMES_HISTORY];
 
@@ -210,7 +212,7 @@ t_rift_blobwatch(struct t_blobwatch *bw)
 
 static void
 compute_greysum(
-    struct t_rift_blobwatch *bw, struct xrt_frame *frame, struct extent *e, int end_y, float *led_x, float *led_y)
+    struct t_rift_blobwatch *bw, struct xrt_frame *frame, struct extent *e, uint16_t end_y, float *led_x, float *led_y)
 {
 	const uint16_t width = e->right - e->left + 1;
 	const uint16_t height = end_y - e->top + 1;
@@ -258,8 +260,8 @@ compute_greysum(
  */
 static inline void
 store_blob(struct extent *e,
-           int index,
-           int end_y,
+           uint32_t index,
+           uint16_t end_y,
            struct blob *b,
            uint32_t blob_id,
            float led_x,
@@ -286,9 +288,10 @@ store_blob(struct extent *e,
 }
 
 static void
-extent_to_blobs(struct t_rift_blobwatch *bw, struct blobservation *ob, struct extent *e, int y, struct xrt_frame *frame)
+extent_to_blobs(
+    struct t_rift_blobwatch *bw, struct blobservation *ob, struct extent *e, uint16_t y, struct xrt_frame *frame)
 {
-	const int max_blobs = XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME;
+	const uint32_t max_blobs = XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME;
 	struct blob *blobs = ob->blobs;
 
 	// Don't store unless there was at least one "bright enough" pixel in the blob
@@ -339,17 +342,20 @@ process_scanline(uint8_t *line,
 	struct extent *le_end = prev_el->extents;
 	struct extent *le = prev_el->extents;
 	struct extent *extent = el->extents;
-	int num_extents = MAX_EXTENTS_PER_LINE;
+	uint16_t num_extents = MAX_EXTENTS_PER_LINE;
 	float center;
-	uint32_t x;
-	int e = 0;
+	uint16_t x;
+	uint32_t e = 0;
 
 	if (prev_el) {
 		le_end += prev_el->num;
 	}
 
-	for (x = 0; x < frame->width; x++) {
-		int start, end;
+	// @todo Support full xrt_frame widths.
+	assert(frame->width < UINT16_MAX);
+
+	for (x = 0; x < (uint16_t)frame->width; x++) {
+		uint16_t start, end;
 		bool is_new_extent = true;
 		uint8_t max_pixel = 0;
 
@@ -361,7 +367,7 @@ process_scanline(uint8_t *line,
 		start = x++;
 
 		// Loop until pixel value falls below threshold
-		while (x < frame->width && line[x] > bw->params.pixel_threshold) {
+		while (x < (uint16_t)frame->width && line[x] > bw->params.pixel_threshold) {
 			if (line[x] > max_pixel) {
 				max_pixel = line[x];
 			}
@@ -459,10 +465,10 @@ process_frame(struct t_rift_blobwatch *bw, struct blobservation *ob, struct xrt_
 /*
  * Finds the first free tracking slot.
  */
-static int
+static int16_t
 find_free_track(uint8_t *tracked)
 {
-	for (int i = 0; i < XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME; i++) {
+	for (uint32_t i = 0; i < XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME; i++) {
 		if (tracked[i] == 0) {
 			return i;
 		}
@@ -530,34 +536,34 @@ blobwatch_process(struct t_rift_blobwatch *bw, struct xrt_frame *frame, struct b
 	struct blobservation *last_ob = bw->last_observation;
 	os_mutex_unlock(&bw->mutex);
 
-	int closest_ob[XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME];      // index of last_ob that is closest to each ob
-	int closest_last_ob[XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME]; // index of ob that is closest to each last_ob
-	int closest_last_ob_distsq[XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME]; // distsq of ob that is closest to each
-	                                                                   // last_ob
+	int64_t closest_ob[XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME];      // index of last_ob that is closest to each ob
+	int64_t closest_last_ob[XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME]; // index of ob that is closest to each last_ob
+	int64_t closest_last_ob_distsq[XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME]; // distsq of ob that is closest to each
+	                                                                       // last_ob
 
 	// Clear closest_*
-	for (int i = 0; i < XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME; i++) {
+	for (uint32_t i = 0; i < XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME; i++) {
 		closest_ob[i] = -1;
 		closest_last_ob[i] = -1;
 		closest_last_ob_distsq[i] = 1000000;
 	}
 
-	int scan_again = 1;
-	int scan_times = 0;
+	uint32_t scan_again = 1;
+	uint32_t scan_times = 0;
 	while (scan_again && scan_times <= 100) {
 		scan_again = 0;
 
 		// Try to match each blob with the closest blob from the previous frame.
-		for (int i = 0; i < ob->num_blobs; i++) {
+		for (uint32_t i = 0; i < ob->num_blobs; i++) {
 			if (closest_ob[i] != -1) {
 				continue; // already has a match
 			}
 
 			struct blob *b2 = &ob->blobs[i];
-			int closest_j = -1;
-			int closest_distsq = -1;
+			int64_t closest_distsq = -1;
+			int64_t closest_j = -1;
 
-			for (int j = 0; j < last_ob->num_blobs; j++) {
+			for (uint32_t j = 0; j < last_ob->num_blobs; j++) {
 				struct blob *b1 = &last_ob->blobs[j];
 				float x, y, dx, dy, distsq;
 
@@ -611,7 +617,7 @@ blobwatch_process(struct t_rift_blobwatch *bw, struct xrt_frame *frame, struct b
 	}
 
 	// Copy blobs that found a closest match
-	for (int i = 0; i < ob->num_blobs; i++) {
+	for (uint32_t i = 0; i < ob->num_blobs; i++) {
 		if (closest_ob[i] < 0) {
 			continue; // no match
 		}
@@ -628,8 +634,8 @@ blobwatch_process(struct t_rift_blobwatch *bw, struct xrt_frame *frame, struct b
 	}
 
 	// Clear the tracking array where blobs have gone missing.
-	for (int i = 0; i < XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME; i++) {
-		int t = ob->tracked[i];
+	for (int16_t i = 0; i < XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME; i++) {
+		uint8_t t = ob->tracked[i];
 
 		if (t > 0 && ob->blobs[t - 1].track_index != i) {
 			ob->tracked[i] = 0;
@@ -638,7 +644,7 @@ blobwatch_process(struct t_rift_blobwatch *bw, struct xrt_frame *frame, struct b
 
 	// Associate newly tracked blobs with a free space in the
 	// tracking array.
-	for (int i = 0; i < ob->num_blobs; i++) {
+	for (uint32_t i = 0; i < ob->num_blobs; i++) {
 		struct blob *b2 = &ob->blobs[i];
 
 		if (b2->age > 0 && b2->track_index < 0) {
@@ -651,7 +657,7 @@ blobwatch_process(struct t_rift_blobwatch *bw, struct xrt_frame *frame, struct b
 
 #if CONSISTENCY_CHECKS
 	// Check blob <-> tracked array links for consistency
-	for (int i = 0; i < ob->num_blobs; i++) {
+	for (uint32_t i = 0; i < ob->num_blobs; i++) {
 		struct blob *b = &ob->blobs[i];
 
 		if (b->track_index >= 0 && ob->tracked[b->track_index] != i + 1) {
@@ -683,7 +689,7 @@ t_rift_blobwatch_push_frame(struct xrt_frame_sink *sink, struct xrt_frame *frame
 	}
 
 	struct t_blob blobs[XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME];
-	for (int i = 0; i < output->num_blobs; i++) {
+	for (uint32_t i = 0; i < output->num_blobs; i++) {
 		struct blob *b = output->blobs + i;
 		struct t_blob *xb = blobs + i;
 
@@ -753,7 +759,7 @@ t_rift_blobwatch_mark_blob_device(struct t_blobwatch *xbw,
 	// label and sorting the blobs by ID might make things quicker for larger numbers
 	// of blobs - needs testing.
 	struct blobservation *last_ob = bw->last_observation;
-	int i, l;
+	uint32_t i, l;
 
 	struct blobservation *ob = &bw->observations[(size_t)xbo->id];
 
@@ -803,10 +809,7 @@ t_rift_blobwatch_mark_blob_device(struct t_blobwatch *xbw,
 		for (l = 0; l < last_ob->num_blobs; l++) {
 			struct blob *new_b = last_ob->blobs + l;
 			if (new_b->blob_id == b->blob_id) {
-				if (bw->debug) {
-					U_LOG_D("Found matching blob %u - labelled with LED id %x\n", b->blob_id,
-					        b->led_id);
-				}
+				U_LOG_D("Found matching blob %u - labelled with LED id %x\n", b->blob_id, b->led_id);
 
 				new_b->led_id = b->led_id;
 
@@ -854,11 +857,10 @@ t_rift_blobwatch_create(const struct t_rift_blobwatch_params *params,
 	bw->blob_max_wh = 20;
 
 	bw->last_observation = NULL;
-	bw->debug = true;
 
 	init_queue(&bw->observation_q);
 	// Push all observations into the available queue
-	for (int i = 0; i < NUM_FRAMES_HISTORY; i++) {
+	for (uint32_t i = 0; i < NUM_FRAMES_HISTORY; i++) {
 		push_queue(&bw->observation_q, bw->observations + i);
 	}
 
