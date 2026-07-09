@@ -18,6 +18,17 @@
 extern "C" {
 #endif
 
+// On CV1, the camera tends to detect very little noise, so we can be much more lenient with what pixels are considered
+// for being a blob.
+#define RIFT_BLOBWATCH_PIXEL_THRESHOLD_CV1 0x24
+// On DK2, the camera sees much more noise, so we need to be much stricter about what pixels get included as a blob.
+#define RIFT_BLOBWATCH_PIXEL_THRESHOLD_DK2 0x7f
+// Require a pixel of this brightness to be included in a blob at all, to help filter out general noise.
+#define RIFT_BLOBWATCH_BLOB_REQUIRED_THRESHOLD 0x40
+#define RIFT_BLOBWATCH_DEFAULT_MAX_MATCH_DIST 50.0f
+// @todo Revisit this number.
+#define RIFT_BLOBWATCH_DEFAULT_MAX_BLOB_WIDTH 20
+
 struct t_rift_blobwatch_params
 {
 	//! Minimum pixel magnitude to be included in a blob at all
@@ -33,6 +44,11 @@ struct t_rift_blobwatch_params
 	 * from inheriting incorrect velocity from distant unrelated blobs.
 	 */
 	float max_match_dist;
+	/*!
+	 * The maximum width of a single blob in pixels. Blobs larger than this will be ignored. This is to prevent
+	 * large areas of brightness, such as the sun or a window, from being considered as a single large blob.
+	 */
+	uint16_t max_blob_width;
 };
 
 /*!

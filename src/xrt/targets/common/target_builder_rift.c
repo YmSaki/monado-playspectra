@@ -44,14 +44,6 @@
 #endif
 
 
-// Require a pixel of this brightness to be included in a blob at all, to help filter out general noise.
-#define RIFT_SENSOR_BLOB_REQUIRED_THRESHOLD 0x40
-// On CV1, the camera tends to detect very little noise, so we can be much more lenient with what pixels are considered
-// for being a blob.
-#define RIFT_SENSOR_PIXEL_THRESHOLD_CV1 0x24
-// On DK2, the camera sees much more noise, so we need to be much stricter about what pixels get included as a blob.
-#define RIFT_SENSOR_PIXEL_THRESHOLD_DK2 0x7f
-
 /*
  *
  * Internal structures
@@ -581,10 +573,11 @@ rift_open_system_impl(struct xrt_builder *xb,
 
 			struct xrt_frame_sink *frame_sink;
 			struct t_rift_blobwatch_params params = {
-			    .pixel_threshold = variant == RIFT_VARIANT_CV1 ? RIFT_SENSOR_PIXEL_THRESHOLD_CV1
-			                                                   : RIFT_SENSOR_PIXEL_THRESHOLD_DK2,
-			    .blob_required_threshold = RIFT_SENSOR_BLOB_REQUIRED_THRESHOLD,
-			    .max_match_dist = 50.0f,
+			    .pixel_threshold = variant == RIFT_VARIANT_CV1 ? RIFT_BLOBWATCH_PIXEL_THRESHOLD_CV1
+			                                                   : RIFT_BLOBWATCH_PIXEL_THRESHOLD_DK2,
+			    .blob_required_threshold = RIFT_BLOBWATCH_BLOB_REQUIRED_THRESHOLD,
+			    .max_match_dist = RIFT_BLOBWATCH_DEFAULT_MAX_MATCH_DIST,
+			    .max_blob_width = RIFT_BLOBWATCH_DEFAULT_MAX_BLOB_WIDTH,
 			};
 			ret = t_rift_blobwatch_create(&params, xfctx, blob_sink, &frame_sink, blobwatch);
 			if (ret != 0) {

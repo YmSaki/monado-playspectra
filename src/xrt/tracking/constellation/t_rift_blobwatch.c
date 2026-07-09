@@ -19,6 +19,7 @@
 #include "util/u_misc.h"
 #include "util/u_frame.h"
 #include "util/u_time.h"
+#include "util/u_var.h"
 
 #include "os/os_threading.h"
 
@@ -182,7 +183,6 @@ struct t_rift_blobwatch
 
 	uint32_t next_blob_id;
 	struct t_rift_blobwatch_params params;
-	int blob_max_wh;
 
 	/*!
 	 * Cached square of the maximum distance for matching a blob between frames,
@@ -202,6 +202,12 @@ struct t_rift_blobwatch
 		uint32_t mosaic_index;
 		uint32_t camera_index;
 	} rerun;
+
+	struct
+	{
+		struct u_var_draggable_u8 blob_required_threshold;
+		struct u_var_draggable_u8 pixel_threshold;
+	} gui;
 };
 
 static inline struct t_rift_blobwatch *
@@ -306,7 +312,7 @@ extent_to_blobs(
 	}
 
 	// Check width and height against the blob "maximum size"
-	if (y - e->top > bw->blob_max_wh || e->right - e->left > bw->blob_max_wh) {
+	if (y - e->top > bw->params.max_blob_width || e->right - e->left > bw->params.max_blob_width) {
 		return;
 	}
 
@@ -736,6 +742,8 @@ t_rift_blobwatch_node_destroy(struct xrt_frame_node *node)
 
 	os_mutex_destroy(&bw->mutex);
 
+	u_var_remove_root(bw);
+
 	free(bw);
 }
 
@@ -852,10 +860,6 @@ t_rift_blobwatch_create(const struct t_rift_blobwatch_params *params,
 	bw->params = *params;
 	bw->max_match_dist_sq = params->max_match_dist * params->max_match_dist;
 
-	// Don't store blobs that are too big to be LEDs sensibly
-	// (arbitrary 20 pixel cut-off. FIXME: revisit this number)
-	bw->blob_max_wh = 20;
-
 	bw->last_observation = NULL;
 
 	init_queue(&bw->observation_q);
@@ -878,6 +882,29 @@ t_rift_blobwatch_create(const struct t_rift_blobwatch_params *params,
 
 	*out_blobwatch = &bw->base;
 	*out_frame_sink = &bw->frame_sink;
+
+	u_var_add_root(bw, "Rift Blobwatch", true);
+
+	u_var_add_gui_header(bw, NULL, "Parameters");
+	{
+		bw->gui.blob_required_threshold = XRT_C11_COMPOUND(struct u_var_draggable_u8){
+		    .val = &bw->params.blob_required_threshold,
+		    .min = 0,
+		    .max = 255,
+		    .step = 1,
+		};
+		bw->gui.pixel_threshold = XRT_C11_COMPOUND(struct u_var_draggable_u8){
+		    .val = &bw->params.pixel_threshold,
+		    .min = 0,
+		    .max = 255,
+		    .step = 1,
+		};
+
+		u_var_add_draggable_u8(bw, &bw->gui.pixel_threshold, "pixel_threshold");
+		u_var_add_draggable_u8(bw, &bw->gui.blob_required_threshold, "blob_required_threshold");
+		u_var_add_f32(bw, &bw->params.max_match_dist, "max_match_dist");
+		u_var_add_u16(bw, &bw->params.max_blob_width, "max_blob_width");
+	}
 
 	return 0;
 }
