@@ -951,14 +951,14 @@ comp_target_swapchain_present(struct comp_target *ct,
 	} else
 #endif
 
-#ifdef VK_KHR_present_id
 	{
+#ifdef VK_KHR_present_id
 		if (vk->features.present_id && vk->features.present_wait) {
 			vk_append_to_pnext_chain((VkBaseInStructure *)&present_info,
 			                         (VkBaseInStructure *)&vk_present_id);
 		}
-	}
 #endif
+	}
 #endif
 
 
