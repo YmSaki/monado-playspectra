@@ -465,7 +465,10 @@ Context::add_haptic_event(vr::VREvent_HapticVibration_t event, const size_t old_
 	d.hapticVibration = event;
 	e.data = d;
 
-	std::lock_guard lk(event_queue_mut);
+	std::unique_lock lk(event_queue_mut);
+	while (events.size() >= 120) { // avoid unbounded allocation if misbehaving apps send too many events at once
+		event_popped.wait(lk);
+	}
 	const size_t old_event_index = old_event_handle - events_tail;
 	if (old_event_index < size_t(events.size())) {
 		vr::VREvent_t *const old_event = &events[old_event_index].inner;
@@ -491,6 +494,7 @@ Context::PollNextEvent(vr::VREvent_t *pEvent, uint32_t uncbVREvent)
 		if (e.inner.eventType == vr::EVREventType::VREvent_None) {
 			continue;
 		}
+		event_popped.notify_all();
 		*pEvent = e.inner;
 		using float_sec = std::chrono::duration<float>;
 		float_sec event_age = std::chrono::steady_clock::now() - e.insert_time;

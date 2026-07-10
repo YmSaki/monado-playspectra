@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <condition_variable>
 #include <unordered_map>
 #include <memory>
 #include <optional>
@@ -73,6 +74,7 @@ private:
 	std::deque<Event> events;
 	size_t events_tail{0};
 	std::mutex event_queue_mut;
+	std::condition_variable event_popped;
 
 	Device *
 	prop_container_to_device(vr::PropertyContainerHandle_t handle);
