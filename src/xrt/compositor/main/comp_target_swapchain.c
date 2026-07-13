@@ -48,6 +48,7 @@
  */
 DEBUG_GET_ONCE_NUM_OPTION(preferred_at_least_image_count, "XRT_COMPOSITOR_PREFERRED_IMAGE_COUNT", 2)
 DEBUG_GET_ONCE_BOOL_OPTION(use_present_wait, "XRT_COMPOSITOR_USE_PRESENT_WAIT", false)
+DEBUG_GET_ONCE_BOOL_OPTION(use_display_timing, "XRT_COMPOSITOR_USE_DISPLAY_TIMING", true)
 
 static inline struct vk_bundle *
 get_vk(struct comp_target_swapchain *cts)
@@ -706,7 +707,8 @@ comp_target_swapchain_create_images(struct comp_target *ct,
 
 	int64_t now_ns = os_monotonic_get_ns();
 	// Some platforms really don't like the pacing_compositor code.
-	bool use_display_timing_if_available = cts->timing_usage == COMP_TARGET_USE_DISPLAY_IF_AVAILABLE;
+	bool use_display_timing_if_available =
+	    debug_get_bool_option_use_display_timing() && cts->timing_usage == COMP_TARGET_USE_DISPLAY_IF_AVAILABLE;
 	if (cts->upc == NULL && use_display_timing_if_available && vk->has_GOOGLE_display_timing) {
 		struct u_pc_display_timing_config config = u_pc_display_timing_get_default_config();
 		u_pc_display_timing_create(ct->c->frame_interval_ns, &config, &cts->upc);
