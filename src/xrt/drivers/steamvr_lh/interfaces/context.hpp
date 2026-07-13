@@ -111,6 +111,7 @@ public:
 	std::mutex devices_mut;
 	class HmdDevice *hmd{nullptr};
 	class ControllerDevice *controller[16]{nullptr};
+	bool in_setup{true};
 	const u_logging_level log_level;
 
 private:

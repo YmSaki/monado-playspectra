@@ -377,6 +377,12 @@ Context::TrackedDeviceAdded(const char *pchDeviceSerialNumber,
 {
 	std::lock_guard lk(this->devices_mut);
 
+	if (!this->in_setup) {
+		// devices appearing after setup are not added to xrt_system_devices and would be leaked on exit
+		CTX_WARN("Cannot add device after setup; consider increasing LH_DISCOVER_WAIT_MS");
+		return false;
+	}
+
 	CTX_INFO("New device added: %s", pchDeviceSerialNumber);
 	switch (eDeviceClass) {
 	case vr::TrackedDeviceClass_HMD: {
@@ -1006,6 +1012,7 @@ steamvr_lh_create_devices(struct xrt_prober *xp, struct xrt_system_devices **out
 	struct xrt_system_devices *xsysd = &svrs->base;
 
 	std::lock_guard lk(svrs->ctx->devices_mut);
+	svrs->ctx->in_setup = false;
 
 	u_system_devices_populate_function_pointers(xsysd, get_roles, destroy);
 	xsysd->create_hand_tracker = b_hand_tracker_create;
