@@ -175,7 +175,17 @@ Context::create(const std::string &steam_install,
 			return nullptr;
 		}
 	}
-	c->start_frame_thread();
+	c->frame_thread = std::thread([c] {
+		while (c->frame_thread_run.load()) {
+			using namespace std::chrono_literals;
+			// SteamVR calls `RunFrame()` approximately every 10.1ms
+			const std::chrono::time_point<std::chrono::steady_clock> next =
+			    std::chrono::steady_clock::now() + 10ms;
+			for (vr::IServerTrackedDeviceProvider *const &provider : c->providers)
+				provider->RunFrame();
+			c->frame_thread_event.try_acquire_until(next);
+		}
+	});
 	return c;
 }
 
@@ -192,22 +202,6 @@ Context::~Context()
 		this->frame_thread.join();
 	for (vr::IServerTrackedDeviceProvider *const &provider : providers)
 		provider->Cleanup();
-}
-
-void
-Context::start_frame_thread()
-{
-	frame_thread = std::thread([this] {
-		while (this->frame_thread_run.load()) {
-			using namespace std::chrono_literals;
-			// SteamVR calls `RunFrame()` approximately every 10.1ms
-			const std::chrono::time_point<std::chrono::steady_clock> next =
-			    std::chrono::steady_clock::now() + 10ms;
-			for (vr::IServerTrackedDeviceProvider *const &provider : this->providers)
-				provider->RunFrame();
-			this->frame_thread_event.try_acquire_until(next);
-		}
-	});
 }
 
 /***** IVRDriverContext methods *****/
@@ -381,6 +375,8 @@ Context::TrackedDeviceAdded(const char *pchDeviceSerialNumber,
                             vr::ETrackedDeviceClass eDeviceClass,
                             vr::ITrackedDeviceServerDriver *pDriver)
 {
+	std::lock_guard lk(this->devices_mut);
+
 	CTX_INFO("New device added: %s", pchDeviceSerialNumber);
 	switch (eDeviceClass) {
 	case vr::TrackedDeviceClass_HMD: {
@@ -1008,6 +1004,8 @@ steamvr_lh_create_devices(struct xrt_prober *xp, struct xrt_system_devices **out
 	}
 
 	struct xrt_system_devices *xsysd = &svrs->base;
+
+	std::lock_guard lk(svrs->ctx->devices_mut);
 
 	u_system_devices_populate_function_pointers(xsysd, get_roles, destroy);
 	xsysd->create_hand_tracker = b_hand_tracker_create;

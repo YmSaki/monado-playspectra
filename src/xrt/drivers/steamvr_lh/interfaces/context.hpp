@@ -76,9 +76,6 @@ private:
 	std::mutex event_queue_mut;
 	std::condition_variable event_popped;
 
-	void
-	start_frame_thread();
-
 	Device *
 	prop_container_to_device(vr::PropertyContainerHandle_t handle);
 
@@ -111,6 +108,7 @@ public:
 	Context(const std::string &steam_install, const std::string &steamvr_install, u_logging_level level);
 
 	// These are owned by monado, context is destroyed when these are destroyed
+	std::mutex devices_mut;
 	class HmdDevice *hmd{nullptr};
 	class ControllerDevice *controller[16]{nullptr};
 	const u_logging_level log_level;
