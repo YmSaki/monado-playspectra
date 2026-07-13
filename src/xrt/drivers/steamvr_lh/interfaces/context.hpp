@@ -76,6 +76,9 @@ private:
 	std::mutex event_queue_mut;
 	std::condition_variable event_popped;
 
+	void
+	start_frame_thread();
+
 	Device *
 	prop_container_to_device(vr::PropertyContainerHandle_t handle);
 

@@ -175,22 +175,13 @@ Context::create(const std::string &steam_install,
 			return nullptr;
 		}
 	}
+	c->start_frame_thread();
 	return c;
 }
 
 Context::Context(const std::string &steam_install, const std::string &steamvr_install, u_logging_level level)
     : settings(steam_install, steamvr_install, this), resources(level, steamvr_install), log_level(level),
-      frame_thread_run(true), frame_thread([this] {
-	      while (this->frame_thread_run.load()) {
-		      using namespace std::chrono_literals;
-		      // SteamVR calls `RunFrame()` approximately every 10.1ms
-		      const std::chrono::time_point<std::chrono::steady_clock> next =
-		          std::chrono::steady_clock::now() + 10ms;
-		      for (vr::IServerTrackedDeviceProvider *const &provider : this->providers)
-			      provider->RunFrame();
-		      this->frame_thread_event.try_acquire_until(next);
-	      }
-      })
+      frame_thread_run(true), frame_thread()
 {}
 
 Context::~Context()
@@ -201,6 +192,22 @@ Context::~Context()
 		this->frame_thread.join();
 	for (vr::IServerTrackedDeviceProvider *const &provider : providers)
 		provider->Cleanup();
+}
+
+void
+Context::start_frame_thread()
+{
+	frame_thread = std::thread([this] {
+		while (this->frame_thread_run.load()) {
+			using namespace std::chrono_literals;
+			// SteamVR calls `RunFrame()` approximately every 10.1ms
+			const std::chrono::time_point<std::chrono::steady_clock> next =
+			    std::chrono::steady_clock::now() + 10ms;
+			for (vr::IServerTrackedDeviceProvider *const &provider : this->providers)
+				provider->RunFrame();
+			this->frame_thread_event.try_acquire_until(next);
+		}
+	});
 }
 
 /***** IVRDriverContext methods *****/
