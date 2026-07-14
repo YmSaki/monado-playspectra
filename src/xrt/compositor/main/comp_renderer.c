@@ -433,12 +433,12 @@ renderer_create_renderings_and_fences(struct comp_renderer *r)
 	if (!use_compute) {
 		r->rtr_array = U_TYPED_ARRAY_CALLOC(struct render_gfx_target_resources, r->buffer_count);
 
-		render_gfx_render_pass_init(     //
-		    &r->target_render_pass,      // rgrp
-		    &r->c->nr,                   // struct render_resources
-		    r->c->target->format,        //
-		    VK_ATTACHMENT_LOAD_OP_CLEAR, // load_op
-		    r->c->target->final_layout); // final_layout
+		render_gfx_render_pass_init(       //
+		    &r->target_render_pass,        // rgrp
+		    &r->c->nr,                     // struct render_resources
+		    r->c->target->format,          //
+		    r->c->target->present_load_op, // load_op
+		    r->c->target->final_layout);   // final_layout
 
 		for (uint32_t i = 0; i < r->buffer_count; ++i) {
 			renderer_build_rendering_target_resources(r, &r->rtr_array[i], i);
@@ -985,6 +985,7 @@ dispatch_compute(struct comp_renderer *r,
 	// Target Vulkan resources..
 	VkImage target_image = r->c->target->images[r->acquired_buffer].handle;
 	VkImageView target_storage_view = r->c->target->images[r->acquired_buffer].view;
+	VkImageLayout target_final_layout = r->c->target->final_layout;
 
 	// Target view information.
 	struct render_viewport_data target_viewport_datas[XRT_MAX_VIEWS];
@@ -1002,6 +1003,7 @@ dispatch_compute(struct comp_renderer *r,
 	    fovs,                            //
 	    target_image,                    //
 	    target_storage_view,             //
+	    target_final_layout,             //
 	    target_viewport_datas);          //
 
 	// Everything is ready, submit to the queue.

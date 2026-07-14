@@ -146,6 +146,9 @@ struct comp_target
 	//! The final layout that the renderpass should leave this target in.
 	VkImageLayout final_layout;
 
+	//! Load ops required for present
+	VkAttachmentLoadOp present_load_op;
+
 	//! Number of images that this target has.
 	uint32_t image_count;
 	//! Array of images and image views for rendering.

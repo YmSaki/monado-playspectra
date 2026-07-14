@@ -1445,6 +1445,7 @@ render_compute_projection_timewarp(struct render_compute *render,
                                    const struct xrt_pose new_poses_scanout_end[XRT_MAX_VIEWS],
                                    VkImage target_image,
                                    VkImageView target_image_view,
+                                   VkImageLayout target_final_layout,
                                    const struct render_viewport_data views[XRT_MAX_VIEWS]);
 
 /*!
@@ -1460,6 +1461,7 @@ render_compute_projection_scanout_compensation(struct render_compute *render,
                                                const struct xrt_pose new_poses_scanout_end[XRT_MAX_VIEWS],
                                                VkImage target_image,
                                                VkImageView target_image_view,
+                                               VkImageLayout target_final_layout,
                                                const struct render_viewport_data views[XRT_MAX_VIEWS]);
 
 /*!
@@ -1472,6 +1474,7 @@ render_compute_projection_no_timewarp(struct render_compute *render,
                                       const struct xrt_normalized_rect src_rects[XRT_MAX_VIEWS],
                                       VkImage target_image,
                                       VkImageView target_image_view,
+                                      VkImageLayout target_final_layout,
                                       const struct render_viewport_data views[XRT_MAX_VIEWS]);
 
 /*!
@@ -1481,6 +1484,7 @@ void
 render_compute_clear(struct render_compute *render,
                      VkImage target_image,
                      VkImageView target_image_view,
+                     VkImageLayout target_final_layout,
                      const struct render_viewport_data views[XRT_MAX_VIEWS]);
 
 

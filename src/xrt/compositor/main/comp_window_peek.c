@@ -396,7 +396,7 @@ comp_window_peek_blit(struct comp_window_peek *w, VkImage src, int32_t width, in
 	    VK_ACCESS_TRANSFER_WRITE_BIT,         // srcAccessMask
 	    0,                                    // dstAccessMask
 	    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, // oldImageLayout
-	    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,      // newImageLayout
+	    w->base.base.final_layout,            // newImageLayout
 	    VK_PIPELINE_STAGE_TRANSFER_BIT,       // srcStageMask
 	    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, // dstStageMask
 	    range);                               // subresourceRange
