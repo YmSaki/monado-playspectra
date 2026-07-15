@@ -32,6 +32,10 @@ DEBUG_GET_ONCE_LOG_OPTION(log_level, "U_PACING_COMPOSITOR_LOG", U_LOGGING_WARN)
 
 #define PRESENT_SLOP_NS (U_TIME_HALF_MS_IN_NS)
 
+DEBUG_GET_ONCE_FLOAT_OPTION(present_to_display_offset_ms, "U_PACING_COMP_PRESENT_TO_DISPLAY_OFFSET_MS", 4.0f)
+DEBUG_GET_ONCE_FLOAT_OPTION(margin_ms, "U_PACING_COMP_MARGIN_MS", 1.0f)
+DEBUG_GET_ONCE_NUM_OPTION(comp_time_max_fraction_percent, "U_PACING_COMP_TIME_MAX_FRACTION_PERCENT", 30)
+
 
 /*
  *
@@ -740,14 +744,22 @@ pc_destroy(struct u_pacing_compositor *upc)
 struct u_pc_display_timing_config
 u_pc_display_timing_get_default_config(void)
 {
+	float present_to_display_offset_ms = debug_get_float_option_present_to_display_offset_ms();
+	int64_t present_to_display_offset_ns = time_ms_f_to_ns(present_to_display_offset_ms);
+
+	float margin_ms = debug_get_float_option_margin_ms();
+	int64_t margin_ns = time_ms_f_to_ns(margin_ms);
+
+	int32_t comp_time_max_fraction_percent = debug_get_num_option_comp_time_max_fraction_percent();
+
 	return XRT_C11_COMPOUND(struct u_pc_display_timing_config){
 	    // An arbitrary guess.
-	    .present_to_display_offset_ns = U_TIME_1MS_IN_NS * 4,
-	    .margin_ns = U_TIME_1MS_IN_NS,
+	    .present_to_display_offset_ns = present_to_display_offset_ns,
+	    .margin_ns = margin_ns,
 	    // Start by assuming the compositor takes 10% of the frame.
 	    .comp_time_fraction = 10,
 	    // Don't allow the compositor to take more than 30% of the frame.
-	    .comp_time_max_fraction = 30,
+	    .comp_time_max_fraction = comp_time_max_fraction_percent,
 	    .adjust_missed_fraction = 4,
 	    .adjust_non_miss_fraction = 2,
 	};

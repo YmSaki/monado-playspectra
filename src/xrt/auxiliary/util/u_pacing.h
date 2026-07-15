@@ -712,6 +712,9 @@ struct u_pc_display_timing_config
 /*!
  * Gets the default configuration of the composition pacing helper.
  *
+ * Some of the configuration values returned from this function can be
+ * configured using debug options.
+ *
  * @ingroup aux_pacing
  * @see u_pacing_compositor
  */
