@@ -47,6 +47,9 @@ struct comp_target_swapchain
 	//! Whether to use VK_KHR_present_id2 over VK_KHR_present_id.
 	bool present_id2_supported;
 
+	//! Whether to use VK_KHR_present_wait2 over VK_KHR_present_wait.
+	bool present_wait2_supported;
+
 	//! Also works as a frame index.
 	int64_t current_frame_id;
 
