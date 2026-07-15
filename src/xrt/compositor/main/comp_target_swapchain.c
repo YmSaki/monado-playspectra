@@ -15,6 +15,7 @@
 #include "util/u_pacing.h"
 #include "util/u_debug.h"
 #include "util/u_pretty_print.h"
+#include "util/u_thread_priority.h"
 
 #include "vk/vk_surface_info.h"
 
@@ -569,6 +570,9 @@ run_vblank_event_thread(void *ptr)
 
 	os_thread_helper_name(&cts->vblank.event_thread, "VBlank Events");
 	U_TRACE_SET_THREAD_NAME("VBlank Events");
+
+	// Try to raise priority of this thread.
+	u_try_to_set_realtime_priority_on_thread(U_LOGGING_INFO, "VBlank Events");
 
 	os_thread_helper_lock(&cts->vblank.event_thread);
 
