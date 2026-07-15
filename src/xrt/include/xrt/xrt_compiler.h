@@ -224,6 +224,64 @@ xrt_atomic_s32_load(xrt_atomic_s32_t *p)
 #endif
 }
 
+typedef volatile int64_t xrt_atomic_s64_t;
+
+static inline int64_t
+xrt_atomic_s64_inc_return(xrt_atomic_s64_t *p)
+{
+#if defined(__GNUC__)
+	return __sync_add_and_fetch(p, 1);
+#elif defined(_MSC_VER)
+	return InterlockedIncrement64((volatile LONG64 *)p);
+#else
+#error "compiler not supported"
+#endif
+}
+static inline int64_t
+xrt_atomic_s64_dec_return(xrt_atomic_s64_t *p)
+{
+#if defined(__GNUC__)
+	return __sync_sub_and_fetch(p, 1);
+#elif defined(_MSC_VER)
+	return InterlockedDecrement64((volatile LONG64 *)p);
+#else
+#error "compiler not supported"
+#endif
+}
+static inline int64_t
+xrt_atomic_s64_cmpxchg(xrt_atomic_s64_t *p, int64_t old_, int64_t new_)
+{
+#if defined(__GNUC__)
+	return __sync_val_compare_and_swap(p, old_, new_);
+#elif defined(_MSC_VER)
+	return InterlockedCompareExchange64((volatile LONG64 *)p, old_, new_);
+#else
+#error "compiler not supported"
+#endif
+}
+static inline void
+xrt_atomic_s64_store(xrt_atomic_s64_t *p, int64_t v)
+{
+#if defined(__GNUC__)
+	__atomic_store_n(p, v, __ATOMIC_SEQ_CST);
+#elif defined(_MSC_VER)
+	InterlockedExchange64((volatile LONG64 *)p, v);
+#else
+#error "compiler not supported"
+#endif
+}
+static inline int64_t
+xrt_atomic_s64_load(xrt_atomic_s64_t *p)
+{
+#if defined(__GNUC__)
+	return __atomic_load_n(p, __ATOMIC_SEQ_CST);
+#elif defined(_MSC_VER)
+	return InterlockedCompareExchange64((volatile LONG64 *)p, 0, 0);
+#else
+#error "compiler not supported"
+#endif
+}
+
 #ifdef _MSC_VER
 typedef intptr_t ssize_t;
 #define _SSIZE_T_
