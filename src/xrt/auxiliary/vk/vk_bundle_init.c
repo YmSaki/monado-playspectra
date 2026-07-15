@@ -1015,7 +1015,7 @@ vk_create_device(struct vk_bundle *vk,
 	VkPhysicalDevicePresentIdFeaturesKHR present_id = {
 	    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR,
 	    .pNext = NULL,
-	    .presentId = device_features.present_wait,
+	    .presentId = device_features.present_id && device_features.present_wait,
 	};
 #endif
 
@@ -1023,7 +1023,7 @@ vk_create_device(struct vk_bundle *vk,
 	VkPhysicalDevicePresentId2FeaturesKHR present_id2 = {
 	    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR,
 	    .pNext = NULL,
-	    .presentId2 = device_features.present_wait,
+	    .presentId2 = device_features.present_id2 && device_features.present_wait,
 	};
 #endif
 
@@ -1086,13 +1086,13 @@ vk_create_device(struct vk_bundle *vk,
 #endif
 
 #ifdef VK_KHR_present_id
-	if (vk->has_KHR_present_wait) {
+	if (vk->has_KHR_present_id && device_features.present_wait) {
 		vk_append_to_pnext_chain((VkBaseInStructure *)&device_create_info, (VkBaseInStructure *)&present_id);
 	}
 #endif
 
 #ifdef VK_KHR_present_id2
-	if (vk->has_KHR_present_wait) {
+	if (vk->has_KHR_present_id2 && device_features.present_wait) {
 		vk_append_to_pnext_chain((VkBaseInStructure *)&device_create_info, (VkBaseInStructure *)&present_id2);
 	}
 #endif
