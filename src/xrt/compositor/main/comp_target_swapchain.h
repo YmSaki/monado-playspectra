@@ -44,12 +44,6 @@ struct comp_target_swapchain
 	//! If we should use display timing.
 	enum comp_target_display_timing_usage timing_usage;
 
-	//! Whether to use VK_KHR_present_id2 over VK_KHR_present_id.
-	bool present_id2_supported;
-
-	//! Whether to use VK_KHR_present_wait2 over VK_KHR_present_wait.
-	bool present_wait2_supported;
-
 	//! Also works as a frame index.
 	int64_t current_frame_id;
 
@@ -81,6 +75,12 @@ struct comp_target_swapchain
 #ifdef VK_EXT_display_surface_counter
 		VkSurfaceCounterFlagsEXT surface_counter_flags;
 #endif
+
+		//! Whether VK_KHR_present_id2 is supported for the surface.
+		bool present_id2_supported;
+
+		//! Whether VK_KHR_present_wait2 is supported for the surface.
+		bool present_wait2_supported;
 	} surface;
 
 	struct

@@ -736,17 +736,17 @@ comp_target_swapchain_create_images(struct comp_target *ct,
 	}
 
 #ifdef VK_KHR_present_id2
-	cts->present_id2_supported = vk->features.present_id2 && info.present_id2_caps.presentId2Supported;
+	cts->surface.present_id2_supported = vk->features.present_id2 && info.present_id2_caps.presentId2Supported;
 #endif
 #ifdef VK_KHR_present_wait2
-	cts->present_wait2_supported =
+	cts->surface.present_wait2_supported =
 	    vk->features.present_wait2 && info.present_wait2_caps.presentWait2Supported;
 #endif
 
 	// If we have the present wait extension, mark it as supported now
 	ct->wait_for_present_supported =
 	    ((vk->features.present_id && vk->features.present_wait) ||
-	     (cts->present_id2_supported && cts->present_wait2_supported)) &&
+	     (cts->surface.present_id2_supported && cts->surface.present_wait2_supported)) &&
 	    debug_get_bool_option_use_present_wait();
 
 	// Can we create swapchains from the surface on this device and queue.
@@ -859,7 +859,7 @@ comp_target_swapchain_create_images(struct comp_target *ct,
 	};
 
 #ifdef VK_KHR_present_id2
-	if (cts->present_id2_supported && cts->present_wait2_supported) {
+	if (cts->surface.present_id2_supported && cts->surface.present_wait2_supported) {
 		swapchain_info.flags |= VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR;
 		swapchain_info.flags |= VK_SWAPCHAIN_CREATE_PRESENT_WAIT_2_BIT_KHR;
 	}
@@ -1037,7 +1037,7 @@ comp_target_swapchain_present(struct comp_target *ct,
 #endif
 
 #ifdef VK_KHR_present_id2
-	if (cts->present_id2_supported && cts->present_wait2_supported) {
+	if (cts->surface.present_id2_supported && cts->surface.present_wait2_supported) {
 		vk_append_to_pnext_chain((VkBaseInStructure *)&present_info, (VkBaseInStructure *)&vk_present_id2);
 	} else
 #endif
@@ -1080,7 +1080,7 @@ comp_target_swapchain_wait_for_present(struct comp_target *ct, time_duration_ns 
 	struct vk_bundle *vk = get_vk(cts);
 
 #ifdef VK_KHR_present_wait2
-	if (cts->present_wait2_supported) {
+	if (cts->surface.present_wait2_supported) {
 		VkPresentWait2InfoKHR info2 = {
 		    .sType = VK_STRUCTURE_TYPE_PRESENT_WAIT_2_INFO_KHR,
 		    .pNext = NULL,
