@@ -737,17 +737,21 @@ pc_destroy(struct u_pacing_compositor *upc)
 	free(pc);
 }
 
-const struct u_pc_display_timing_config U_PC_DISPLAY_TIMING_CONFIG_DEFAULT = {
-    // An arbitrary guess.
-    .present_to_display_offset_ns = U_TIME_1MS_IN_NS * 4,
-    .margin_ns = U_TIME_1MS_IN_NS,
-    // Start by assuming the compositor takes 10% of the frame.
-    .comp_time_fraction = 10,
-    // Don't allow the compositor to take more than 30% of the frame.
-    .comp_time_max_fraction = 30,
-    .adjust_missed_fraction = 4,
-    .adjust_non_miss_fraction = 2,
-};
+struct u_pc_display_timing_config
+u_pc_display_timing_get_default_config(void)
+{
+	return XRT_C11_COMPOUND(struct u_pc_display_timing_config){
+	    // An arbitrary guess.
+	    .present_to_display_offset_ns = U_TIME_1MS_IN_NS * 4,
+	    .margin_ns = U_TIME_1MS_IN_NS,
+	    // Start by assuming the compositor takes 10% of the frame.
+	    .comp_time_fraction = 10,
+	    // Don't allow the compositor to take more than 30% of the frame.
+	    .comp_time_max_fraction = 30,
+	    .adjust_missed_fraction = 4,
+	    .adjust_non_miss_fraction = 2,
+	};
+}
 
 xrt_result_t
 u_pc_display_timing_create(int64_t estimated_frame_period_ns,
