@@ -858,7 +858,7 @@ comp_target_swapchain_create_images(struct comp_target *ct,
 	    .oldSwapchain = old_swapchain_handle,
 	};
 
-#ifdef VK_KHR_present_id2
+#if defined(VK_KHR_present_id2) && defined(VK_KHR_present_wait2)
 	if (cts->surface.present_id2_supported && cts->surface.present_wait2_supported) {
 		swapchain_info.flags |= VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR;
 		swapchain_info.flags |= VK_SWAPCHAIN_CREATE_PRESENT_WAIT_2_BIT_KHR;
