@@ -242,12 +242,17 @@ create_frame(struct pacing_compositor *pc, enum frame_state state)
 static struct frame *
 get_latest_frame_with_state_at_least(struct pacing_compositor *pc, enum frame_state state)
 {
-	int64_t start_from = pc->current_frame_id;
-	int64_t count = 1;
+	int64_t latest_frame_id = pc->current_frame_id;
 
-	while (start_from >= count && count < NUM_FRAMES) {
-		int64_t frame_id = start_from - count;
-		count++;
+	// Walk backwards from the most recently created frame.
+	for (int64_t i = 0; i < NUM_FRAMES; i++) {
+		int64_t frame_id = latest_frame_id - i;
+
+		// Zero is never a valid frame ID.
+		if (frame_id <= 0) {
+			break;
+		}
+
 		struct frame *f = get_frame(pc, frame_id);
 		if (f->state >= state && f->frame_id == frame_id) {
 			return f;
