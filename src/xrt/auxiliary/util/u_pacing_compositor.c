@@ -115,7 +115,7 @@ struct pacing_compositor
 	/*!
 	 * Used to generate frame IDs.
 	 */
-	int64_t next_frame_id;
+	int64_t current_frame_id;
 
 	/*!
 	 * The maximum amount we give to the compositor.
@@ -225,7 +225,7 @@ get_frame(struct pacing_compositor *pc, int64_t frame_id)
 static struct frame *
 create_frame(struct pacing_compositor *pc, enum frame_state state)
 {
-	int64_t frame_id = ++pc->next_frame_id;
+	int64_t frame_id = ++pc->current_frame_id;
 	struct frame *f = get_frame(pc, frame_id);
 
 	f->frame_id = frame_id;
@@ -242,7 +242,7 @@ create_frame(struct pacing_compositor *pc, enum frame_state state)
 static struct frame *
 get_latest_frame_with_state_at_least(struct pacing_compositor *pc, enum frame_state state)
 {
-	int64_t start_from = pc->next_frame_id;
+	int64_t start_from = pc->current_frame_id;
 	int64_t count = 1;
 
 	while (start_from >= count && count < NUM_FRAMES) {
