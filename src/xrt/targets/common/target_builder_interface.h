@@ -59,6 +59,10 @@
 #define T_BUILDER_SIMULATED
 #endif
 
+#if defined(XRT_BUILD_DRIVER_PLAYSPECTRA) || defined(XRT_DOXYGEN)
+#define T_BUILDER_PLAYSPECTRA
+#endif
+
 #if defined(XRT_BUILD_DRIVER_SIMULAVR) || defined(XRT_DOXYGEN)
 #define T_BUILDER_SIMULAVR
 #endif
@@ -160,6 +164,15 @@ t_builder_rgb_tracking_create(void);
  */
 struct xrt_builder *
 t_builder_simulated_create(void);
+#endif
+
+
+#ifdef T_BUILDER_PLAYSPECTRA
+/*!
+ * Builder for @ref drv_playspectra virtual devices.
+ */
+struct xrt_builder *
+t_builder_playspectra_create(void);
 #endif
 
 

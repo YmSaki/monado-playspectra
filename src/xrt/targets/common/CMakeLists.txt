@@ -60,6 +60,11 @@ if(XRT_BUILD_DRIVER_SIMULATED)
 	target_sources(target_lists PRIVATE target_builder_simulated.c)
 endif()
 
+if(XRT_BUILD_DRIVER_PLAYSPECTRA)
+	target_sources(target_lists PRIVATE target_builder_playspectra.c)
+	target_link_libraries(target_lists PRIVATE drv_playspectra)
+endif()
+
 if(XRT_BUILD_DRIVER_SIMULAVR)
 	target_sources(target_lists PRIVATE target_builder_simulavr.c)
 endif()

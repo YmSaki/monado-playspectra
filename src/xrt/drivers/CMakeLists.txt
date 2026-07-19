@@ -79,6 +79,22 @@ if(XRT_BUILD_DRIVER_SIMULATED)
 	list(APPEND ENABLED_HEADSET_DRIVERS simulated)
 endif()
 
+if(XRT_BUILD_DRIVER_PLAYSPECTRA)
+	add_library(
+		drv_playspectra STATIC
+		playspectra/playspectra_hmd.c
+		playspectra/playspectra_control.c
+		playspectra/playspectra_proto.c
+		playspectra/playspectra_proto.h
+		playspectra/playspectra_interface.h
+		)
+	target_link_libraries(drv_playspectra PRIVATE xrt-interfaces aux_util)
+	if(WIN32)
+		target_link_libraries(drv_playspectra PRIVATE ws2_32)
+	endif()
+	list(APPEND ENABLED_HEADSET_DRIVERS playspectra)
+endif()
+
 if(XRT_BUILD_DRIVER_TWRAP)
 	add_library(drv_twrap STATIC twrap/twrap_slam.c twrap/twrap_interface.h)
 	target_link_libraries(drv_twrap PRIVATE xrt-interfaces aux_util)
