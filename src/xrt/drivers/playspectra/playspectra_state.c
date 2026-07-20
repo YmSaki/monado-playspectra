@@ -13,6 +13,8 @@
 
 #include <stdbool.h>
 
+#define PS_HAPTIC_QUEUE 16
+
 struct playspectra_state
 {
 	struct os_mutex mutex; // guards everything below
@@ -20,6 +22,11 @@ struct playspectra_state
 
 	struct xrt_space_relation head;
 	struct playspectra_ctrl ctrl[2]; // [PLAYSPECTRA_LEFT], [PLAYSPECTRA_RIGHT]
+
+	// haptic イベントのリング(アプリ set_output → 制御チャネルが転送)。
+	struct playspectra_haptic_event haptics[PS_HAPTIC_QUEUE];
+	int haptic_head;
+	int haptic_count;
 
 	struct playspectra_control *control; // taken exactly once at teardown
 	bool control_taken;
@@ -88,6 +95,35 @@ playspectra_state_get_ctrl(struct playspectra_state *s, enum playspectra_hand ha
 	os_mutex_lock(&s->mutex);
 	*out = s->ctrl[hand];
 	os_mutex_unlock(&s->mutex);
+}
+
+void
+playspectra_state_push_haptic(struct playspectra_state *s, const struct playspectra_haptic_event *e)
+{
+	os_mutex_lock(&s->mutex);
+	if (s->haptic_count == PS_HAPTIC_QUEUE) {
+		// 満杯: 最古を捨てる。
+		s->haptic_head = (s->haptic_head + 1) % PS_HAPTIC_QUEUE;
+		s->haptic_count--;
+	}
+	int idx = (s->haptic_head + s->haptic_count) % PS_HAPTIC_QUEUE;
+	s->haptics[idx] = *e;
+	s->haptic_count++;
+	os_mutex_unlock(&s->mutex);
+}
+
+bool
+playspectra_state_pop_haptic(struct playspectra_state *s, struct playspectra_haptic_event *out)
+{
+	os_mutex_lock(&s->mutex);
+	bool has = s->haptic_count > 0;
+	if (has) {
+		*out = s->haptics[s->haptic_head];
+		s->haptic_head = (s->haptic_head + 1) % PS_HAPTIC_QUEUE;
+		s->haptic_count--;
+	}
+	os_mutex_unlock(&s->mutex);
+	return has;
 }
 
 void

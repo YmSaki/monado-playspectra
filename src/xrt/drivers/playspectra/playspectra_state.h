@@ -93,6 +93,29 @@ void
 playspectra_state_get_ctrl(struct playspectra_state *s, enum playspectra_hand hand, struct playspectra_ctrl *out);
 
 /*!
+ * haptic 出力イベント(アプリ → デバイス)。制御チャネルが observer/writer へ転送する。
+ */
+struct playspectra_haptic_event
+{
+	enum playspectra_hand hand;
+	float frequency;
+	float amplitude;
+	int64_t duration_ns;
+};
+
+/*!
+ * haptic イベントをキューに積む(デバイスの set_output から)。満杯なら最古を捨てる。thread-safe。
+ */
+void
+playspectra_state_push_haptic(struct playspectra_state *s, const struct playspectra_haptic_event *e);
+
+/*!
+ * haptic イベントを1つ取り出す(制御チャネルが送出)。無ければ false。thread-safe。
+ */
+bool
+playspectra_state_pop_haptic(struct playspectra_state *s, struct playspectra_haptic_event *out);
+
+/*!
  * Store the control-channel handle so the first device to be destroyed can stop it.
  */
 void

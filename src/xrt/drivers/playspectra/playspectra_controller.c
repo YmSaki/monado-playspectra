@@ -145,6 +145,24 @@ playspectra_controller_get_tracked_pose(struct xrt_device *xdev,
 	return XRT_SUCCESS;
 }
 
+// haptic 出力(アプリの xrApplyHapticFeedback)を共有 state のキューへ積む。
+// 制御チャネルが接続中の observer/writer へ {"event":"haptics",...} として転送する。
+static xrt_result_t
+playspectra_controller_set_output(struct xrt_device *xdev,
+                                  enum xrt_output_name name,
+                                  const struct xrt_output_value *value)
+{
+	struct playspectra_controller *c = playspectra_controller(xdev);
+	struct playspectra_haptic_event e = {
+	    .hand = c->hand,
+	    .frequency = value->vibration.frequency,
+	    .amplitude = value->vibration.amplitude,
+	    .duration_ns = value->vibration.duration_ns,
+	};
+	playspectra_state_push_haptic(c->state, &e);
+	return XRT_SUCCESS;
+}
+
 struct xrt_device *
 playspectra_controller_create(enum xrt_device_type type,
                               const struct xrt_pose *center,
@@ -167,6 +185,7 @@ playspectra_controller_create(enum xrt_device_type type,
 	u_device_populate_function_pointers(&c->base, playspectra_controller_get_tracked_pose,
 	                                    playspectra_controller_destroy);
 	c->base.update_inputs = playspectra_controller_update_inputs;
+	c->base.set_output = playspectra_controller_set_output;
 	c->base.tracking_origin = origin;
 	c->base.name = XRT_DEVICE_TOUCH_CONTROLLER;
 	c->base.device_type = type;

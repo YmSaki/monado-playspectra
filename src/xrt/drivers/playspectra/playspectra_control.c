@@ -290,29 +290,46 @@ dispatch_line(struct playspectra_control *c, ps_socket_t s, char *line)
 	cJSON_Delete(req);
 }
 
-// select で短いタイムアウト付きに readable を待つ。1=readable / 0=stop 要求 / -1=error。
-// blocking accept()/recv() は Linux では close() で確実に解除されない(Monado/WSL で実測)。
-// stop フラグを 200ms 以内に検知して抜けることで、移植的にクリーン停止できる。
+// select で readable/timeout を待つ。1=readable / 2=timeout / 0=stop / -1=error。
+// blocking accept()/recv() は Linux では close() で確実に解除されない(Monado/WSL で実測)ため、
+// 200ms タイムアウト付きにして、stop フラグと haptic キューを定期的にチェックできるようにする。
 static int
 wait_readable(ps_socket_t s, struct os_thread_helper *oth)
 {
-	while (os_thread_helper_is_running(oth)) {
-		fd_set rfds;
-		FD_ZERO(&rfds);
-		FD_SET(s, &rfds);
-		struct timeval tv;
-		tv.tv_sec = 0;
-		tv.tv_usec = 200 * 1000; // 200 ms
-		int r = select((int)s + 1, &rfds, NULL, NULL, &tv);
-		if (r < 0) {
-			return -1; // socket closed / error
-		}
-		if (r > 0) {
-			return 1; // readable
-		}
-		// r == 0: timeout -> is_running を再確認
+	if (!os_thread_helper_is_running(oth)) {
+		return 0;
 	}
-	return 0; // stop 要求
+	fd_set rfds;
+	FD_ZERO(&rfds);
+	FD_SET(s, &rfds);
+	struct timeval tv;
+	tv.tv_sec = 0;
+	tv.tv_usec = 200 * 1000; // 200 ms
+	int r = select((int)s + 1, &rfds, NULL, NULL, &tv);
+	if (!os_thread_helper_is_running(oth)) {
+		return 0; // stop during select
+	}
+	if (r < 0) {
+		return -1;
+	}
+	return (r == 0) ? 2 : 1;
+}
+
+// 共有 state に溜まった haptic イベントを接続中の socket へ送出する(spec §5.4 events)。
+static void
+drain_haptics(struct playspectra_control *c, ps_socket_t conn)
+{
+	struct playspectra_haptic_event e;
+	while (playspectra_state_pop_haptic(c->state, &e)) {
+		cJSON *o = cJSON_CreateObject();
+		cJSON_AddStringToObject(o, "event", "haptics");
+		cJSON_AddStringToObject(o, "hand", e.hand == PLAYSPECTRA_LEFT ? "left" : "right");
+		cJSON_AddNumberToObject(o, "frequency", e.frequency);
+		cJSON_AddNumberToObject(o, "amplitude", e.amplitude);
+		cJSON_AddNumberToObject(o, "duration_ns", (double)e.duration_ns);
+		send_json_line(conn, o);
+		cJSON_Delete(o);
+	}
 }
 
 // 1接続を NDJSON で処理(切断または stop まで)。
@@ -325,9 +342,15 @@ serve_connection(struct playspectra_control *c, ps_socket_t conn)
 	}
 	size_t used = 0;
 	while (os_thread_helper_is_running(&c->oth)) {
-		if (wait_readable(conn, &c->oth) != 1) {
-			break; // stop 要求 or 切断
+		int w = wait_readable(conn, &c->oth);
+		if (w == 0 || w < 0) {
+			break; // stop or error
 		}
+		drain_haptics(c, conn); // 接続中は haptic イベントを流す
+		if (w == 2) {
+			continue; // timeout: haptic を流しただけ
+		}
+		// w == 1: readable
 		char chunk[4096];
 		int n = (int)recv(conn, chunk, sizeof(chunk), 0);
 		if (n <= 0) {
@@ -356,8 +379,12 @@ control_thread(void *ptr)
 {
 	struct playspectra_control *c = (struct playspectra_control *)ptr;
 	while (os_thread_helper_is_running(&c->oth)) {
-		if (wait_readable(c->listen_sock, &c->oth) != 1) {
-			break; // stop 要求 or listen socket error
+		int w = wait_readable(c->listen_sock, &c->oth);
+		if (w == 0 || w < 0) {
+			break; // stop or listen socket error
+		}
+		if (w == 2) {
+			continue; // timeout: no incoming connection
 		}
 		ps_socket_t conn = accept(c->listen_sock, NULL, NULL);
 		if (conn == PS_INVALID_SOCKET) {
