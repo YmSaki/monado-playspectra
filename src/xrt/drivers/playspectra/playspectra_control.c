@@ -5,9 +5,9 @@
  * @brief  PlaySpectra NDJSON control channel (spec playspectra-device-core-spec.md §5).
  *
  * 1接続を順次 accept して処理する(writer 排他の最小形。observer 複数は後続)。
- * hello / set_state / get_state / status を扱い、set_state の hmd.head を
- * playspectra_hmd_set_pose へ適用する。M2 は HMD のみ。socket のクロスプラットフォーム
- * ラップは remote ドライバ(r_hub.c)と同型。
+ * hello / set_state / get_state / status を扱い、set_state の hmd.head と left/right
+ * コントローラを共有 VirtualDeviceState(playspectra_state)へ書き込む(各デバイスがそこから読む)。
+ * socket のクロスプラットフォームラップは remote ドライバ(r_hub.c)と同型。
  *
  * @ingroup drv_playspectra
  */

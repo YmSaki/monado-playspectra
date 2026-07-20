@@ -9,7 +9,6 @@
  * @ingroup drv_playspectra
  */
 
-#include "os/os_time.h"
 #include "xrt/xrt_defines.h"
 #include "xrt/xrt_device.h"
 

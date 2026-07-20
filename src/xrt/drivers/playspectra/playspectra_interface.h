@@ -21,6 +21,7 @@ extern "C" {
 #endif
 
 struct xrt_device;
+struct xrt_tracking_origin;
 struct playspectra_state;
 
 /*!
