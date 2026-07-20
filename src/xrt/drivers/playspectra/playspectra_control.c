@@ -33,6 +33,7 @@ typedef SOCKET ps_socket_t;
 #define ps_close_socket closesocket
 #else
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -211,7 +212,32 @@ dispatch_line(struct playspectra_control *c, ps_socket_t s, char *line)
 	cJSON_Delete(req);
 }
 
-// 1接続を NDJSON で処理(切断まで)。
+// select で短いタイムアウト付きに readable を待つ。1=readable / 0=stop 要求 / -1=error。
+// blocking accept()/recv() は Linux では close() で確実に解除されない(Monado/WSL で実測)。
+// stop フラグを 200ms 以内に検知して抜けることで、移植的にクリーン停止できる。
+static int
+wait_readable(ps_socket_t s, struct os_thread_helper *oth)
+{
+	while (os_thread_helper_is_running(oth)) {
+		fd_set rfds;
+		FD_ZERO(&rfds);
+		FD_SET(s, &rfds);
+		struct timeval tv;
+		tv.tv_sec = 0;
+		tv.tv_usec = 200 * 1000; // 200 ms
+		int r = select((int)s + 1, &rfds, NULL, NULL, &tv);
+		if (r < 0) {
+			return -1; // socket closed / error
+		}
+		if (r > 0) {
+			return 1; // readable
+		}
+		// r == 0: timeout -> is_running を再確認
+	}
+	return 0; // stop 要求
+}
+
+// 1接続を NDJSON で処理(切断または stop まで)。
 static void
 serve_connection(struct playspectra_control *c, ps_socket_t conn)
 {
@@ -221,6 +247,9 @@ serve_connection(struct playspectra_control *c, ps_socket_t conn)
 	}
 	size_t used = 0;
 	while (os_thread_helper_is_running(&c->oth)) {
+		if (wait_readable(conn, &c->oth) != 1) {
+			break; // stop 要求 or 切断
+		}
 		char chunk[4096];
 		int n = (int)recv(conn, chunk, sizeof(chunk), 0);
 		if (n <= 0) {
@@ -249,9 +278,12 @@ control_thread(void *ptr)
 {
 	struct playspectra_control *c = (struct playspectra_control *)ptr;
 	while (os_thread_helper_is_running(&c->oth)) {
+		if (wait_readable(c->listen_sock, &c->oth) != 1) {
+			break; // stop 要求 or listen socket error
+		}
 		ps_socket_t conn = accept(c->listen_sock, NULL, NULL);
 		if (conn == PS_INVALID_SOCKET) {
-			break; // listen socket が閉じられた(stop)
+			continue;
 		}
 		CTL_INFO(c, "PlaySpectra control: writer connected");
 		serve_connection(c, conn);
@@ -322,14 +354,13 @@ playspectra_control_stop(struct playspectra_control *c)
 	if (c == NULL) {
 		return;
 	}
-	// accept をアンブロックするため listen socket を閉じてから join。
-	os_thread_helper_lock(&c->oth);
-	ps_close_socket(c->listen_sock);
-	c->listen_sock = PS_INVALID_SOCKET;
-	os_thread_helper_unlock(&c->oth);
-
+	// stop フラグを立ててスレッド join。wait_readable が 200ms 以内に is_running=false を
+	// 検知して抜けるので、close() で accept を叩き起こす必要はない(Linux では不確実なため)。
 	os_thread_helper_stop_and_wait(&c->oth);
 	os_thread_helper_destroy(&c->oth);
+	if (c->listen_sock != PS_INVALID_SOCKET) {
+		ps_close_socket(c->listen_sock);
+	}
 #ifdef _WIN32
 	WSACleanup();
 #endif
