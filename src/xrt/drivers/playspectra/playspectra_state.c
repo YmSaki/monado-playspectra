@@ -19,6 +19,7 @@ struct playspectra_state
 	int refcount;
 
 	struct xrt_space_relation head;
+	struct playspectra_ctrl ctrl[2]; // [PLAYSPECTRA_LEFT], [PLAYSPECTRA_RIGHT]
 
 	struct playspectra_control *control; // taken exactly once at teardown
 	bool control_taken;
@@ -70,6 +71,22 @@ playspectra_state_get_head(struct playspectra_state *s, struct xrt_space_relatio
 {
 	os_mutex_lock(&s->mutex);
 	*out = s->head;
+	os_mutex_unlock(&s->mutex);
+}
+
+void
+playspectra_state_set_ctrl(struct playspectra_state *s, enum playspectra_hand hand, const struct playspectra_ctrl *c)
+{
+	os_mutex_lock(&s->mutex);
+	s->ctrl[hand] = *c;
+	os_mutex_unlock(&s->mutex);
+}
+
+void
+playspectra_state_get_ctrl(struct playspectra_state *s, enum playspectra_hand hand, struct playspectra_ctrl *out)
+{
+	os_mutex_lock(&s->mutex);
+	*out = s->ctrl[hand];
 	os_mutex_unlock(&s->mutex);
 }
 

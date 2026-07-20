@@ -49,6 +49,50 @@ void
 playspectra_state_get_head(struct playspectra_state *s, struct xrt_space_relation *out);
 
 /*!
+ * どちらの手か。共有 state のコントローラ配列の添字。
+ */
+enum playspectra_hand
+{
+	PLAYSPECTRA_LEFT = 0,
+	PLAYSPECTRA_RIGHT = 1,
+};
+
+/*!
+ * 片手コントローラの完全状態(Touch 相当)。set_state は full snapshot なので毎回まるごと差し替える。
+ * ボタンは左右を統一するため primary(=x/a) / secondary(=y/b) で持つ。
+ */
+struct playspectra_ctrl
+{
+	bool connected;
+	struct xrt_space_relation grip;
+	struct xrt_space_relation aim;
+
+	float trigger;              // /input/trigger/value
+	float squeeze;              // /input/squeeze/value
+	struct xrt_vec2 thumbstick; // /input/thumbstick (x,y)
+
+	bool trigger_touch;
+	bool thumbstick_click;
+	bool thumbstick_touch;
+	bool primary_click;   // x(左)/a(右)
+	bool primary_touch;
+	bool secondary_click; // y(左)/b(右)
+	bool secondary_touch;
+	bool menu_click;      // 左
+	bool system_click;    // 右
+	bool thumbrest_touch;
+};
+
+/*!
+ * コントローラ状態の getter/setter。@p hand は enum playspectra_hand。thread-safe。
+ */
+void
+playspectra_state_set_ctrl(struct playspectra_state *s, enum playspectra_hand hand, const struct playspectra_ctrl *c);
+
+void
+playspectra_state_get_ctrl(struct playspectra_state *s, enum playspectra_hand hand, struct playspectra_ctrl *out);
+
+/*!
  * Store the control-channel handle so the first device to be destroyed can stop it.
  */
 void

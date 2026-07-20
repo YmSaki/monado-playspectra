@@ -47,8 +47,10 @@ playspectra_estimate_system(struct xrt_builder *xb,
 		return XRT_SUCCESS;
 	}
 
-	// M2 は HMD のみ。head を確実に供給する。
+	// head + 左右 Touch コントローラを確実に供給する。
 	estimate->certain.head = true;
+	estimate->certain.left = true;
+	estimate->certain.right = true;
 	// simulated(-50)より優先。有効化されているときだけ effective。
 	estimate->priority = -40;
 
@@ -64,8 +66,10 @@ playspectra_open_system_impl(struct xrt_builder *xb,
                              struct xrt_frame_context *xfctx,
                              struct t_builder_roles_helper *tbrh)
 {
-	// STAGE 基準の初期頭部 pose(床 y=0、立位相当の目高さ 1.6m)。
+	// STAGE 基準の初期 pose(床 y=0、立位相当)。
 	const struct xrt_pose head_center = {XRT_QUAT_IDENTITY, {0.0f, 1.6f, 0.0f}};
+	const struct xrt_pose left_center = {XRT_QUAT_IDENTITY, {-0.2f, 1.3f, -0.5f}};
+	const struct xrt_pose right_center = {XRT_QUAT_IDENTITY, {0.2f, 1.3f, -0.5f}};
 
 	// 共有 VirtualDeviceState(制御チャネルが書き、各デバイスが読む)。
 	struct playspectra_state *state = playspectra_state_create();
@@ -75,21 +79,31 @@ playspectra_open_system_impl(struct xrt_builder *xb,
 		playspectra_state_unref(state);
 		return XRT_ERROR_ALLOCATION;
 	}
-
-	// 制御チャネルは共有 state に書く。最初に破棄されるデバイスが1度だけ停止する。
-	struct playspectra_control *control = playspectra_control_start(state, 0);
-	playspectra_state_set_control(state, control);
-	playspectra_state_unref(state); // builder の生成 ref を手放す(以降は head[+control] が保持)
-
 	head->supported.orientation_tracking = true;
 	head->supported.position_tracking = true;
 	head->tracking_origin->type = XRT_TRACKING_TYPE_OTHER;
 
+	struct xrt_device *left = playspectra_controller_create(XRT_DEVICE_TYPE_LEFT_HAND_CONTROLLER, &left_center,
+	                                                        head->tracking_origin, state);
+	struct xrt_device *right = playspectra_controller_create(XRT_DEVICE_TYPE_RIGHT_HAND_CONTROLLER, &right_center,
+	                                                         head->tracking_origin, state);
+
+	// 制御チャネルは共有 state に書く。最初に破棄されるデバイスが1度だけ停止する。
+	struct playspectra_control *control = playspectra_control_start(state, 0);
+	playspectra_state_set_control(state, control);
+	playspectra_state_unref(state); // builder の生成 ref を手放す(以降は各 device[+control] が保持)
+
 	xsysd->static_xdevs[xsysd->static_xdev_count++] = head;
+	if (left != NULL) {
+		xsysd->static_xdevs[xsysd->static_xdev_count++] = left;
+	}
+	if (right != NULL) {
+		xsysd->static_xdevs[xsysd->static_xdev_count++] = right;
+	}
 
 	tbrh->head = head;
-	tbrh->left = NULL;
-	tbrh->right = NULL;
+	tbrh->left = left;
+	tbrh->right = right;
 
 	return XRT_SUCCESS;
 }

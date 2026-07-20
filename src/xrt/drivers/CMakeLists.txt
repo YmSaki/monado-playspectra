@@ -83,6 +83,7 @@ if(XRT_BUILD_DRIVER_PLAYSPECTRA)
 	add_library(
 		drv_playspectra STATIC
 		playspectra/playspectra_hmd.c
+		playspectra/playspectra_controller.c
 		playspectra/playspectra_control.c
 		playspectra/playspectra_proto.c
 		playspectra/playspectra_proto.h

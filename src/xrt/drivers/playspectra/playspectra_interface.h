@@ -46,6 +46,18 @@ struct xrt_device *
 playspectra_hmd_create(const struct xrt_pose *center, struct playspectra_state *state);
 
 /*!
+ * 仮想 Touch コントローラ(左右)を生成する。@p type で利き手を指定
+ * (XRT_DEVICE_TYPE_LEFT/RIGHT_HAND_CONTROLLER)。pose/入力は共有 @p state から読む。
+ *
+ * @ingroup drv_playspectra
+ */
+struct xrt_device *
+playspectra_controller_create(enum xrt_device_type type,
+                              const struct xrt_pose *center,
+                              struct xrt_tracking_origin *origin,
+                              struct playspectra_state *state);
+
+/*!
  * NDJSON 制御チャネル(spec §5)。opaque。start で accept ループのスレッドを立てる。
  *
  * @ingroup drv_playspectra

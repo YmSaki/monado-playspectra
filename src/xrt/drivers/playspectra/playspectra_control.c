@@ -131,7 +131,90 @@ handle_hello(struct playspectra_control *c, ps_socket_t s, const cJSON *req)
 	reply_ok(s, req, r);
 }
 
-// set_state の hmd.head を適用。spec §2.2/§2.1。
+// playspectra_pose(平文) → xrt_space_relation。
+static struct xrt_space_relation
+pose_to_relation(const struct playspectra_pose *p)
+{
+	struct xrt_space_relation rel = XRT_SPACE_RELATION_ZERO;
+	rel.pose.position.x = (float)p->position[0];
+	rel.pose.position.y = (float)p->position[1];
+	rel.pose.position.z = (float)p->position[2];
+	rel.pose.orientation.x = (float)p->orientation[0];
+	rel.pose.orientation.y = (float)p->orientation[1];
+	rel.pose.orientation.z = (float)p->orientation[2];
+	rel.pose.orientation.w = (float)p->orientation[3];
+	int f = 0;
+	if (p->position_valid) {
+		f |= XRT_SPACE_RELATION_POSITION_VALID_BIT;
+	}
+	if (p->orientation_valid) {
+		f |= XRT_SPACE_RELATION_ORIENTATION_VALID_BIT;
+	}
+	if (p->position_tracked) {
+		f |= XRT_SPACE_RELATION_POSITION_TRACKED_BIT;
+	}
+	if (p->orientation_tracked) {
+		f |= XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT;
+	}
+	rel.relation_flags = (enum xrt_space_relation_flags)f;
+	return rel;
+}
+
+// parsed controller(semantic path) → 共有 state。present のときだけ適用(full snapshot)。
+// ボタンは左右統一のため x/a→primary, y/b→secondary に写像する。
+static void
+apply_ctrl(struct playspectra_control *c, enum playspectra_hand hand, const struct playspectra_controller_update *u)
+{
+	if (!u->present) {
+		return;
+	}
+	struct playspectra_ctrl st;
+	U_ZERO(&st);
+	st.connected = true;
+	if (u->has_grip) {
+		st.grip = pose_to_relation(&u->grip);
+	}
+	if (u->has_aim) {
+		st.aim = pose_to_relation(&u->aim);
+	}
+	for (int i = 0; i < u->input_count; i++) {
+		const char *p = u->inputs[i].path;
+		double n = u->inputs[i].num;
+		bool b = u->inputs[i].flag;
+		if (strcmp(p, "/input/trigger/value") == 0) {
+			st.trigger = (float)n;
+		} else if (strcmp(p, "/input/squeeze/value") == 0) {
+			st.squeeze = (float)n;
+		} else if (strcmp(p, "/input/thumbstick/x") == 0) {
+			st.thumbstick.x = (float)n;
+		} else if (strcmp(p, "/input/thumbstick/y") == 0) {
+			st.thumbstick.y = (float)n;
+		} else if (strcmp(p, "/input/trigger/touch") == 0) {
+			st.trigger_touch = b;
+		} else if (strcmp(p, "/input/thumbstick/click") == 0) {
+			st.thumbstick_click = b;
+		} else if (strcmp(p, "/input/thumbstick/touch") == 0) {
+			st.thumbstick_touch = b;
+		} else if (strcmp(p, "/input/thumbrest/touch") == 0) {
+			st.thumbrest_touch = b;
+		} else if (strcmp(p, "/button/x/click") == 0 || strcmp(p, "/button/a/click") == 0) {
+			st.primary_click = b;
+		} else if (strcmp(p, "/button/x/touch") == 0 || strcmp(p, "/button/a/touch") == 0) {
+			st.primary_touch = b;
+		} else if (strcmp(p, "/button/y/click") == 0 || strcmp(p, "/button/b/click") == 0) {
+			st.secondary_click = b;
+		} else if (strcmp(p, "/button/y/touch") == 0 || strcmp(p, "/button/b/touch") == 0) {
+			st.secondary_touch = b;
+		} else if (strcmp(p, "/input/menu/click") == 0) {
+			st.menu_click = b;
+		} else if (strcmp(p, "/input/system/click") == 0) {
+			st.system_click = b;
+		}
+	}
+	playspectra_state_set_ctrl(c->state, hand, &st);
+}
+
+// set_state の hmd.head + left/right を共有 state へ適用。spec §2.2/§2.3。
 static void
 handle_set_state(struct playspectra_control *c, ps_socket_t s, const cJSON *req)
 {
@@ -154,32 +237,11 @@ handle_set_state(struct playspectra_control *c, ps_socket_t s, const cJSON *req)
 	}
 
 	if (parsed.head.present) {
-		const struct playspectra_pose *hp = &parsed.head.pose;
-		struct xrt_space_relation rel = XRT_SPACE_RELATION_ZERO;
-		rel.pose.position.x = (float)hp->position[0];
-		rel.pose.position.y = (float)hp->position[1];
-		rel.pose.position.z = (float)hp->position[2];
-		rel.pose.orientation.x = (float)hp->orientation[0];
-		rel.pose.orientation.y = (float)hp->orientation[1];
-		rel.pose.orientation.z = (float)hp->orientation[2];
-		rel.pose.orientation.w = (float)hp->orientation[3];
-		int f = 0;
-		if (hp->position_valid) {
-			f |= XRT_SPACE_RELATION_POSITION_VALID_BIT;
-		}
-		if (hp->orientation_valid) {
-			f |= XRT_SPACE_RELATION_ORIENTATION_VALID_BIT;
-		}
-		if (hp->position_tracked) {
-			f |= XRT_SPACE_RELATION_POSITION_TRACKED_BIT;
-		}
-		if (hp->orientation_tracked) {
-			f |= XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT;
-		}
-		rel.relation_flags = (enum xrt_space_relation_flags)f;
+		struct xrt_space_relation rel = pose_to_relation(&parsed.head.pose);
 		playspectra_state_set_head(c->state, &rel);
 	}
-	// left/right コントローラの適用は controller device 追加後(Stage 2)。parsed.left/right は解析済み。
+	apply_ctrl(c, PLAYSPECTRA_LEFT, &parsed.left);
+	apply_ctrl(c, PLAYSPECTRA_RIGHT, &parsed.right);
 
 	c->sequence = sequence;
 	cJSON *r = cJSON_CreateObject();
