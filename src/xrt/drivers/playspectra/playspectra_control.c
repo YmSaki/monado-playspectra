@@ -153,17 +153,19 @@ handle_set_state(struct playspectra_control *c, ps_socket_t s, const cJSON *req)
 	}
 
 	if (parsed.head.present) {
+		const struct playspectra_pose *hp = &parsed.head.pose;
 		struct xrt_pose pose;
-		pose.position.x = (float)parsed.head.position[0];
-		pose.position.y = (float)parsed.head.position[1];
-		pose.position.z = (float)parsed.head.position[2];
-		pose.orientation.x = (float)parsed.head.orientation[0];
-		pose.orientation.y = (float)parsed.head.orientation[1];
-		pose.orientation.z = (float)parsed.head.orientation[2];
-		pose.orientation.w = (float)parsed.head.orientation[3];
-		playspectra_hmd_set_pose(c->hmd, &pose, parsed.head.position_valid, parsed.head.orientation_valid,
-		                         parsed.head.position_tracked, parsed.head.orientation_tracked);
+		pose.position.x = (float)hp->position[0];
+		pose.position.y = (float)hp->position[1];
+		pose.position.z = (float)hp->position[2];
+		pose.orientation.x = (float)hp->orientation[0];
+		pose.orientation.y = (float)hp->orientation[1];
+		pose.orientation.z = (float)hp->orientation[2];
+		pose.orientation.w = (float)hp->orientation[3];
+		playspectra_hmd_set_pose(c->hmd, &pose, hp->position_valid, hp->orientation_valid,
+		                         hp->position_tracked, hp->orientation_tracked);
 	}
+	// left/right コントローラの適用は共有状態リファクタ後(次ステップ)。parsed.left/right は解析済み。
 
 	c->sequence = sequence;
 	cJSON *r = cJSON_CreateObject();
