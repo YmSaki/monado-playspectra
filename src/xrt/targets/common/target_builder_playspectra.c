@@ -21,6 +21,7 @@
 #include "target_builder_interface.h"
 
 #include "playspectra/playspectra_interface.h"
+#include "playspectra/playspectra_state.h"
 
 #include <assert.h>
 
@@ -66,10 +67,19 @@ playspectra_open_system_impl(struct xrt_builder *xb,
 	// STAGE 基準の初期頭部 pose(床 y=0、立位相当の目高さ 1.6m)。
 	const struct xrt_pose head_center = {XRT_QUAT_IDENTITY, {0.0f, 1.6f, 0.0f}};
 
-	struct xrt_device *head = playspectra_hmd_create(&head_center);
+	// 共有 VirtualDeviceState(制御チャネルが書き、各デバイスが読む)。
+	struct playspectra_state *state = playspectra_state_create();
+
+	struct xrt_device *head = playspectra_hmd_create(&head_center, state);
 	if (head == NULL) {
+		playspectra_state_unref(state);
 		return XRT_ERROR_ALLOCATION;
 	}
+
+	// 制御チャネルは共有 state に書く。最初に破棄されるデバイスが1度だけ停止する。
+	struct playspectra_control *control = playspectra_control_start(state, 0);
+	playspectra_state_set_control(state, control);
+	playspectra_state_unref(state); // builder の生成 ref を手放す(以降は head[+control] が保持)
 
 	head->supported.orientation_tracking = true;
 	head->supported.position_tracking = true;

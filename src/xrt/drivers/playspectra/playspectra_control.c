@@ -20,6 +20,7 @@
 
 #include "playspectra_interface.h"
 #include "playspectra_proto.h"
+#include "playspectra_state.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -47,7 +48,7 @@ typedef int ps_socket_t;
 
 struct playspectra_control
 {
-	struct xrt_device *hmd;
+	struct playspectra_state *state; // 共有 VirtualDeviceState(ref を1つ保持)
 	struct os_thread_helper oth;
 	ps_socket_t listen_sock;
 	uint16_t port;
@@ -154,18 +155,31 @@ handle_set_state(struct playspectra_control *c, ps_socket_t s, const cJSON *req)
 
 	if (parsed.head.present) {
 		const struct playspectra_pose *hp = &parsed.head.pose;
-		struct xrt_pose pose;
-		pose.position.x = (float)hp->position[0];
-		pose.position.y = (float)hp->position[1];
-		pose.position.z = (float)hp->position[2];
-		pose.orientation.x = (float)hp->orientation[0];
-		pose.orientation.y = (float)hp->orientation[1];
-		pose.orientation.z = (float)hp->orientation[2];
-		pose.orientation.w = (float)hp->orientation[3];
-		playspectra_hmd_set_pose(c->hmd, &pose, hp->position_valid, hp->orientation_valid,
-		                         hp->position_tracked, hp->orientation_tracked);
+		struct xrt_space_relation rel = XRT_SPACE_RELATION_ZERO;
+		rel.pose.position.x = (float)hp->position[0];
+		rel.pose.position.y = (float)hp->position[1];
+		rel.pose.position.z = (float)hp->position[2];
+		rel.pose.orientation.x = (float)hp->orientation[0];
+		rel.pose.orientation.y = (float)hp->orientation[1];
+		rel.pose.orientation.z = (float)hp->orientation[2];
+		rel.pose.orientation.w = (float)hp->orientation[3];
+		int f = 0;
+		if (hp->position_valid) {
+			f |= XRT_SPACE_RELATION_POSITION_VALID_BIT;
+		}
+		if (hp->orientation_valid) {
+			f |= XRT_SPACE_RELATION_ORIENTATION_VALID_BIT;
+		}
+		if (hp->position_tracked) {
+			f |= XRT_SPACE_RELATION_POSITION_TRACKED_BIT;
+		}
+		if (hp->orientation_tracked) {
+			f |= XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT;
+		}
+		rel.relation_flags = (enum xrt_space_relation_flags)f;
+		playspectra_state_set_head(c->state, &rel);
 	}
-	// left/right コントローラの適用は共有状態リファクタ後(次ステップ)。parsed.left/right は解析済み。
+	// left/right コントローラの適用は controller device 追加後(Stage 2)。parsed.left/right は解析済み。
 
 	c->sequence = sequence;
 	cJSON *r = cJSON_CreateObject();
@@ -301,7 +315,7 @@ control_thread(void *ptr)
  */
 
 struct playspectra_control *
-playspectra_control_start(struct xrt_device *hmd, uint16_t port)
+playspectra_control_start(struct playspectra_state *state, uint16_t port)
 {
 	if (port == 0) {
 		const char *env = getenv("PLAYSPECTRA_MONADO_PORT");
@@ -333,7 +347,8 @@ playspectra_control_start(struct xrt_device *hmd, uint16_t port)
 	}
 
 	struct playspectra_control *c = U_TYPED_CALLOC(struct playspectra_control);
-	c->hmd = hmd;
+	c->state = state;
+	playspectra_state_ref(state);
 	c->listen_sock = ls;
 	c->port = port;
 	c->sequence = 0;
@@ -366,5 +381,6 @@ playspectra_control_stop(struct playspectra_control *c)
 #ifdef _WIN32
 	WSACleanup();
 #endif
+	playspectra_state_unref(c->state);
 	free(c);
 }

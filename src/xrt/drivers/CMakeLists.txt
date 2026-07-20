@@ -86,6 +86,8 @@ if(XRT_BUILD_DRIVER_PLAYSPECTRA)
 		playspectra/playspectra_control.c
 		playspectra/playspectra_proto.c
 		playspectra/playspectra_proto.h
+		playspectra/playspectra_state.c
+		playspectra/playspectra_state.h
 		playspectra/playspectra_interface.h
 		)
 	target_link_libraries(drv_playspectra PRIVATE xrt-interfaces aux_util)

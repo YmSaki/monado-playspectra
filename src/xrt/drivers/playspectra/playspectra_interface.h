@@ -21,6 +21,7 @@ extern "C" {
 #endif
 
 struct xrt_device;
+struct playspectra_state;
 
 /*!
  * @defgroup drv_playspectra PlaySpectra virtual device driver
@@ -36,26 +37,13 @@ struct xrt_device;
 #define PLAYSPECTRA_DEFAULT_PORT 52702
 
 /*!
- * 仮想 HMD を生成する。@p center は STAGE 基準の初期 pose(床 y=0)。
+ * 仮想 HMD を生成する。@p center は STAGE 基準の初期 pose(床 y=0)。@p state は共有
+ * VirtualDeviceState(HMD はここから pose を読む)。デバイスは state を1つ ref する。
  *
  * @ingroup drv_playspectra
  */
 struct xrt_device *
-playspectra_hmd_create(const struct xrt_pose *center);
-
-/*!
- * 仮想 HMD の pose を外部から更新する(control channel の set_state から呼ぶ)。
- * relation_history に push するのでスレッド安全。valid/tracked は spec の relation_flags に対応。
- *
- * @ingroup drv_playspectra
- */
-void
-playspectra_hmd_set_pose(struct xrt_device *xdev,
-                         const struct xrt_pose *pose,
-                         bool position_valid,
-                         bool orientation_valid,
-                         bool position_tracked,
-                         bool orientation_tracked);
+playspectra_hmd_create(const struct xrt_pose *center, struct playspectra_state *state);
 
 /*!
  * NDJSON 制御チャネル(spec §5)。opaque。start で accept ループのスレッドを立てる。
@@ -65,13 +53,14 @@ playspectra_hmd_set_pose(struct xrt_device *xdev,
 struct playspectra_control;
 
 /*!
- * 制御チャネルを開始する。@p hmd に set_state を適用する。@p port が 0 なら
- * PLAYSPECTRA_DEFAULT_PORT(環境変数で上書き可)。失敗時は NULL(デバイスは pose 固定のまま動く)。
+ * 制御チャネルを開始する。set_state は @p state に書き込む(デバイスがそこから読む)。
+ * @p port が 0 なら PLAYSPECTRA_DEFAULT_PORT(環境変数で上書き可)。制御チャネルは state を
+ * 1つ ref する。失敗時は NULL(デバイスは初期 pose のまま動く)。
  *
  * @ingroup drv_playspectra
  */
 struct playspectra_control *
-playspectra_control_start(struct xrt_device *hmd, uint16_t port);
+playspectra_control_start(struct playspectra_state *state, uint16_t port);
 
 /*!
  * 制御チャネルを停止・解放する。NULL 安全。
