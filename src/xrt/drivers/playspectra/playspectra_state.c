@@ -23,6 +23,12 @@ struct playspectra_state
 	struct xrt_space_relation head;
 	struct playspectra_ctrl ctrl[2]; // [PLAYSPECTRA_LEFT], [PLAYSPECTRA_RIGHT]
 
+	// reset(spec §5.3)用の起動時スナップショット。builder が全デバイスの初期 pose を
+	// 書き込んだ後に capture_initial で採取し、reset で head/ctrl をここへ戻す。
+	struct xrt_space_relation initial_head;
+	struct playspectra_ctrl initial_ctrl[2];
+	bool has_initial;
+
 	// haptic イベントのリング(アプリ set_output → 制御チャネルが転送)。
 	struct playspectra_haptic_event haptics[PS_HAPTIC_QUEUE];
 	int haptic_head;
@@ -94,6 +100,29 @@ playspectra_state_get_ctrl(struct playspectra_state *s, enum playspectra_hand ha
 {
 	os_mutex_lock(&s->mutex);
 	*out = s->ctrl[hand];
+	os_mutex_unlock(&s->mutex);
+}
+
+void
+playspectra_state_capture_initial(struct playspectra_state *s)
+{
+	os_mutex_lock(&s->mutex);
+	s->initial_head = s->head;
+	s->initial_ctrl[PLAYSPECTRA_LEFT] = s->ctrl[PLAYSPECTRA_LEFT];
+	s->initial_ctrl[PLAYSPECTRA_RIGHT] = s->ctrl[PLAYSPECTRA_RIGHT];
+	s->has_initial = true;
+	os_mutex_unlock(&s->mutex);
+}
+
+void
+playspectra_state_reset(struct playspectra_state *s)
+{
+	os_mutex_lock(&s->mutex);
+	if (s->has_initial) {
+		s->head = s->initial_head;
+		s->ctrl[PLAYSPECTRA_LEFT] = s->initial_ctrl[PLAYSPECTRA_LEFT];
+		s->ctrl[PLAYSPECTRA_RIGHT] = s->initial_ctrl[PLAYSPECTRA_RIGHT];
+	}
 	os_mutex_unlock(&s->mutex);
 }
 

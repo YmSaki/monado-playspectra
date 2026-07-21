@@ -88,6 +88,10 @@ playspectra_open_system_impl(struct xrt_builder *xb,
 	struct xrt_device *right = playspectra_controller_create(XRT_DEVICE_TYPE_RIGHT_HAND_CONTROLLER, &right_center,
 	                                                         head->tracking_origin, state);
 
+	// 全デバイスが初期 pose を共有 state へ書いた後の状態を reset の復元点として採取(spec §5.3)。
+	// 制御チャネル start より前に採る(この時点で client はまだ接続できず、上書きの恐れがない)。
+	playspectra_state_capture_initial(state);
+
 	// 制御チャネルは共有 state に書く。最初に破棄されるデバイスが1度だけ停止する。
 	struct playspectra_control *control = playspectra_control_start(state, 0);
 	playspectra_state_set_control(state, control);

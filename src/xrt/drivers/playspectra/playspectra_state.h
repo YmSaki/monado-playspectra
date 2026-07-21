@@ -93,6 +93,21 @@ void
 playspectra_state_get_ctrl(struct playspectra_state *s, enum playspectra_hand hand, struct playspectra_ctrl *out);
 
 /*!
+ * 現在の head + 両コントローラ状態を「起動時スナップショット」として保存する。builder が
+ * 全デバイスの初期 pose を共有 state へ書き込んだ直後に1度呼ぶ。reset の復元先になる。thread-safe。
+ */
+void
+playspectra_state_capture_initial(struct playspectra_state *s);
+
+/*!
+ * head + 両コントローラ状態を capture_initial で保存した起動時状態へ戻す(spec §5.3 reset =
+ * writer 切断時の「保持」の反対の「初期化」)。スナップショット未取得なら何もしない。
+ * haptic キュー(アプリ→デバイスの in-flight イベント)には触れない。thread-safe。
+ */
+void
+playspectra_state_reset(struct playspectra_state *s);
+
+/*!
  * haptic 出力イベント(アプリ → デバイス)。制御チャネルが observer/writer へ転送する。
  */
 struct playspectra_haptic_event

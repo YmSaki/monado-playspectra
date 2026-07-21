@@ -617,6 +617,25 @@ handle_status(struct playspectra_control *c, struct ps_conn *conn, const cJSON *
 	reply_ok(conn->sock, req, r);
 }
 
+// reset(spec §5.4, writer のみ): device 状態を builder が起動時に書いた値へ初期化する
+// (spec §5.3「明示 reset で初期化」= writer 切断時の「保持」の反対)。
+// frame_synchronized の重複判定は Adapter ローカルの記録(§4)なので起動直後相当へクリアし、
+// 新しい writer が logical_frame を振り直しても直前 frame と stale/conflict にならないようにする。
+// sequence は Server 所有の単調増加(§4)なので Adapter からは巻き戻さない。
+static void
+handle_reset(struct playspectra_control *c, struct ps_conn *conn, const cJSON *req)
+{
+	if (conn->role != PS_ROLE_WRITER) {
+		reply_error(conn->sock, req, "protocol_error", "not_writer");
+		return;
+	}
+	playspectra_state_reset(c->state);
+	c->has_frame = false;
+	c->last_frame = 0;
+	c->frame_sig = 0;
+	reply_ok(conn->sock, req, NULL);
+}
+
 static void
 dispatch_line(struct playspectra_control *c, struct ps_conn *conn, char *line)
 {
@@ -640,6 +659,8 @@ dispatch_line(struct playspectra_control *c, struct ps_conn *conn, char *line)
 			handle_get_state(c, conn, req);
 		} else if (strcmp(cmd->valuestring, "status") == 0) {
 			handle_status(c, conn, req);
+		} else if (strcmp(cmd->valuestring, "reset") == 0) {
+			handle_reset(c, conn, req);
 		} else {
 			reply_error(conn->sock, req, "protocol_error", "unknown_cmd");
 		}
