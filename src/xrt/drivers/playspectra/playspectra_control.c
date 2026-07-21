@@ -4,10 +4,15 @@
  * @file
  * @brief  PlaySpectra NDJSON control channel (spec playspectra-device-core-spec.md §5).
  *
- * 1接続を順次 accept して処理する(writer 排他の最小形。observer 複数は後続)。
- * hello / set_state / get_state / status を扱い、set_state の hmd.head と left/right
- * コントローラを共有 VirtualDeviceState(playspectra_state)へ書き込む(各デバイスがそこから読む)。
+ * 複数接続を単一スレッドの select() 多重化で捌く(spec §5.3)。hello の role で
+ * writer(同時1接続のみ排他) / observer(複数可) を割り当てる。set_state は writer のみ、
+ * get_state / status は誰でも、haptic イベントは接続中の全ハンドシェイク済みクライアントへ
+ * broadcast する。set_state の hmd.head と left/right コントローラを共有 VirtualDeviceState
+ * (playspectra_state)へ書き込み、get_state はそこから読み出す(各デバイスも共有 state から読む)。
  * socket のクロスプラットフォームラップは remote ドライバ(r_hub.c)と同型。
+ *
+ * blocking accept()/recv() は Linux では close() で確実に解除されない(Monado/WSL で実測)ため、
+ * select() に 200ms タイムアウトを付け、stop フラグと haptic キューを定期的にチェックできるようにする。
  *
  * @ingroup drv_playspectra
  */
@@ -45,6 +50,24 @@ typedef int ps_socket_t;
 
 #define PS_PROTOCOL_VERSION PLAYSPECTRA_PROTOCOL_VERSION
 #define PS_LINE_MAX (1024 * 1024) // spec §5.1: 最大 1 MiB
+#define PS_MAX_CONN 8             // 1 writer + 最大 7 observer(FD_SETSIZE 十分内)
+
+// 1接続あたりのロール(spec §5.3)。hello 完了までは NONE。
+enum ps_role
+{
+	PS_ROLE_NONE = 0, // hello 未完了(イベント購読対象外)
+	PS_ROLE_WRITER,   // 書き込み権あり(同時1接続のみ)
+	PS_ROLE_OBSERVER, // 読み取り/購読のみ(複数可)
+};
+
+// 1接続の状態。sock == PS_INVALID_SOCKET が空きスロット。buf は行組み立て用(スロット再利用のため保持)。
+struct ps_conn
+{
+	ps_socket_t sock;
+	enum ps_role role;
+	char *buf;   // PS_LINE_MAX(遅延確保・stop で一括 free)
+	size_t used; // buf に溜めた行の長さ
+};
 
 struct playspectra_control
 {
@@ -54,10 +77,72 @@ struct playspectra_control
 	uint16_t port;
 	uint64_t sequence; // 最後に適用した sequence(latest-wins)
 	enum u_logging_level log_level;
+
+	struct ps_conn conns[PS_MAX_CONN];
 };
 
 #define CTL_ERR(c, ...) U_LOG_IFL_E((c)->log_level, __VA_ARGS__)
 #define CTL_INFO(c, ...) U_LOG_IFL_I((c)->log_level, __VA_ARGS__)
+
+
+/*
+ * 接続スロット / ロール ヘルパ。
+ */
+
+// この接続以外に writer ロールの接続が存在するか(writer 排他判定)。
+static bool
+writer_held_by_other(struct playspectra_control *c, const struct ps_conn *self)
+{
+	for (int i = 0; i < PS_MAX_CONN; i++) {
+		const struct ps_conn *cn = &c->conns[i];
+		if (cn != self && cn->sock != PS_INVALID_SOCKET && cn->role == PS_ROLE_WRITER) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// writer ロールの接続が1つでもあるか(status 用)。
+static bool
+any_writer(struct playspectra_control *c)
+{
+	return writer_held_by_other(c, NULL);
+}
+
+// 空きスロットへ新規接続を登録。満杯 or buf 確保失敗なら NULL。
+static struct ps_conn *
+alloc_conn(struct playspectra_control *c, ps_socket_t s)
+{
+	for (int i = 0; i < PS_MAX_CONN; i++) {
+		struct ps_conn *cn = &c->conns[i];
+		if (cn->sock != PS_INVALID_SOCKET) {
+			continue;
+		}
+		if (cn->buf == NULL) {
+			cn->buf = malloc(PS_LINE_MAX);
+			if (cn->buf == NULL) {
+				return NULL;
+			}
+		}
+		cn->sock = s;
+		cn->role = PS_ROLE_NONE;
+		cn->used = 0;
+		return cn;
+	}
+	return NULL; // 満杯
+}
+
+// 接続を閉じてスロットを空ける(buf は再利用のため保持、stop で free)。
+static void
+free_conn(struct ps_conn *cn)
+{
+	if (cn->sock != PS_INVALID_SOCKET) {
+		ps_close_socket(cn->sock);
+		cn->sock = PS_INVALID_SOCKET;
+	}
+	cn->role = PS_ROLE_NONE;
+	cn->used = 0;
+}
 
 
 /*
@@ -108,28 +193,8 @@ reply_ok(ps_socket_t s, const cJSON *req, cJSON *extra /*owned*/)
 
 
 /*
- * Command handlers.
+ * pose / controller <-> JSON 変換。
  */
-
-static void
-handle_hello(struct playspectra_control *c, ps_socket_t s, const cJSON *req)
-{
-	if (!playspectra_proto_hello_version_ok(req, PLAYSPECTRA_PROTOCOL_VERSION)) {
-		reply_error(s, req, "protocol_error", "protocol_version");
-		return;
-	}
-	// 最小 descriptor(HMD のみ)。fov/解像度の実値は spec §7 で後日。
-	cJSON *r = cJSON_CreateObject();
-	cJSON_AddNumberToObject(r, "protocol_version", PS_PROTOCOL_VERSION);
-	cJSON_AddStringToObject(r, "role_granted", "writer");
-	cJSON *desc = cJSON_AddObjectToObject(r, "descriptor");
-	cJSON_AddNumberToObject(desc, "protocol_version", PS_PROTOCOL_VERSION);
-	cJSON *hmd = cJSON_AddObjectToObject(desc, "hmd");
-	cJSON_AddNumberToObject(hmd, "recommended_eye_width", 1080);
-	cJSON_AddNumberToObject(hmd, "recommended_eye_height", 1200);
-	cJSON_AddNumberToObject(hmd, "refresh_hz", 90);
-	reply_ok(s, req, r);
-}
 
 // playspectra_pose(平文) → xrt_space_relation。
 static struct xrt_space_relation
@@ -158,6 +223,115 @@ pose_to_relation(const struct playspectra_pose *p)
 	}
 	rel.relation_flags = (enum xrt_space_relation_flags)f;
 	return rel;
+}
+
+// xrt_space_relation → PoseState JSON(spec §2.1)。velocity は未追跡なので null(spec §7)。
+static cJSON *
+relation_to_pose_json(const struct xrt_space_relation *rel)
+{
+	cJSON *p = cJSON_CreateObject();
+	cJSON *pos = cJSON_AddArrayToObject(p, "position");
+	cJSON_AddItemToArray(pos, cJSON_CreateNumber(rel->pose.position.x));
+	cJSON_AddItemToArray(pos, cJSON_CreateNumber(rel->pose.position.y));
+	cJSON_AddItemToArray(pos, cJSON_CreateNumber(rel->pose.position.z));
+	cJSON *ori = cJSON_AddArrayToObject(p, "orientation");
+	cJSON_AddItemToArray(ori, cJSON_CreateNumber(rel->pose.orientation.x));
+	cJSON_AddItemToArray(ori, cJSON_CreateNumber(rel->pose.orientation.y));
+	cJSON_AddItemToArray(ori, cJSON_CreateNumber(rel->pose.orientation.z));
+	cJSON_AddItemToArray(ori, cJSON_CreateNumber(rel->pose.orientation.w));
+	cJSON_AddNullToObject(p, "linear_velocity");  // 未追跡: null 許容(spec §2.1/§7)
+	cJSON_AddNullToObject(p, "angular_velocity"); // 同上
+	int f = (int)rel->relation_flags;
+	cJSON *fl = cJSON_AddObjectToObject(p, "relation_flags");
+	cJSON_AddBoolToObject(fl, "position_valid", (f & XRT_SPACE_RELATION_POSITION_VALID_BIT) != 0);
+	cJSON_AddBoolToObject(fl, "orientation_valid", (f & XRT_SPACE_RELATION_ORIENTATION_VALID_BIT) != 0);
+	cJSON_AddBoolToObject(fl, "position_tracked", (f & XRT_SPACE_RELATION_POSITION_TRACKED_BIT) != 0);
+	cJSON_AddBoolToObject(fl, "orientation_tracked", (f & XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT) != 0);
+	return p;
+}
+
+// 共有 state のコントローラ → Controller JSON(spec §2.3)。inputs は apply_ctrl が受理する
+// semantic path と対称に出す(左=x/y+menu, 右=a/b+system)。system の runtime_reserved 分離
+// (spec §2.4)と Descriptor 駆動の完全性は M2 後続で確定(§7)。
+static cJSON *
+ctrl_to_json(struct playspectra_control *c, enum playspectra_hand hand)
+{
+	struct playspectra_ctrl st;
+	playspectra_state_get_ctrl(c->state, hand, &st);
+
+	cJSON *o = cJSON_CreateObject();
+	cJSON_AddBoolToObject(o, "connected", st.connected);
+	if (!st.connected) {
+		return o; // 未接続は他フィールド不要(spec §2.2)
+	}
+	cJSON_AddItemToObject(o, "grip", relation_to_pose_json(&st.grip));
+	cJSON_AddItemToObject(o, "aim", relation_to_pose_json(&st.aim));
+
+	const bool is_left = (hand == PLAYSPECTRA_LEFT);
+	cJSON *in = cJSON_AddObjectToObject(o, "inputs");
+	cJSON_AddNumberToObject(in, "/input/trigger/value", st.trigger);
+	cJSON_AddBoolToObject(in, "/input/trigger/touch", st.trigger_touch);
+	cJSON_AddNumberToObject(in, "/input/squeeze/value", st.squeeze);
+	cJSON_AddNumberToObject(in, "/input/thumbstick/x", st.thumbstick.x);
+	cJSON_AddNumberToObject(in, "/input/thumbstick/y", st.thumbstick.y);
+	cJSON_AddBoolToObject(in, "/input/thumbstick/click", st.thumbstick_click);
+	cJSON_AddBoolToObject(in, "/input/thumbstick/touch", st.thumbstick_touch);
+	cJSON_AddBoolToObject(in, "/input/thumbrest/touch", st.thumbrest_touch);
+	cJSON_AddBoolToObject(in, is_left ? "/button/x/click" : "/button/a/click", st.primary_click);
+	cJSON_AddBoolToObject(in, is_left ? "/button/x/touch" : "/button/a/touch", st.primary_touch);
+	cJSON_AddBoolToObject(in, is_left ? "/button/y/click" : "/button/b/click", st.secondary_click);
+	cJSON_AddBoolToObject(in, is_left ? "/button/y/touch" : "/button/b/touch", st.secondary_touch);
+	if (is_left) {
+		cJSON_AddBoolToObject(in, "/input/menu/click", st.menu_click);
+	} else {
+		cJSON_AddBoolToObject(in, "/input/system/click", st.system_click);
+	}
+	return o;
+}
+
+
+/*
+ * Command handlers.
+ */
+
+// 最小 descriptor(HMD のみ)。fov/解像度の実値は spec §7 で後日。hello 応答に埋める。
+static void
+add_descriptor(cJSON *r)
+{
+	cJSON *desc = cJSON_AddObjectToObject(r, "descriptor");
+	cJSON_AddNumberToObject(desc, "protocol_version", PS_PROTOCOL_VERSION);
+	cJSON *hmd = cJSON_AddObjectToObject(desc, "hmd");
+	cJSON_AddNumberToObject(hmd, "recommended_eye_width", 1080);
+	cJSON_AddNumberToObject(hmd, "recommended_eye_height", 1200);
+	cJSON_AddNumberToObject(hmd, "refresh_hz", 90);
+}
+
+static void
+handle_hello(struct playspectra_control *c, struct ps_conn *conn, const cJSON *req)
+{
+	if (!playspectra_proto_hello_version_ok(req, PLAYSPECTRA_PROTOCOL_VERSION)) {
+		reply_error(conn->sock, req, "protocol_error", "protocol_version");
+		return;
+	}
+	// role: "writer"(既定) | "observer"。writer は同時1接続のみ(spec §5.3)。
+	const cJSON *role = cJSON_GetObjectItemCaseSensitive(req, "role");
+	const bool want_observer = cJSON_IsString(role) && strcmp(role->valuestring, "observer") == 0;
+	if (!want_observer) {
+		// writer 希望。他接続が既に writer を保持中なら拒否(writer 競合 = protocol_error)。
+		if (writer_held_by_other(c, conn)) {
+			reply_error(conn->sock, req, "protocol_error", "writer_taken");
+			return;
+		}
+		conn->role = PS_ROLE_WRITER;
+	} else {
+		conn->role = PS_ROLE_OBSERVER;
+	}
+
+	cJSON *r = cJSON_CreateObject();
+	cJSON_AddNumberToObject(r, "protocol_version", PS_PROTOCOL_VERSION);
+	cJSON_AddStringToObject(r, "role_granted", conn->role == PS_ROLE_WRITER ? "writer" : "observer");
+	add_descriptor(r);
+	reply_ok(conn->sock, req, r);
 }
 
 // parsed controller(semantic path) → 共有 state。present のときだけ適用(full snapshot)。
@@ -214,15 +388,21 @@ apply_ctrl(struct playspectra_control *c, enum playspectra_hand hand, const stru
 	playspectra_state_set_ctrl(c->state, hand, &st);
 }
 
-// set_state の hmd.head + left/right を共有 state へ適用。spec §2.2/§2.3。
+// set_state の hmd.head + left/right を共有 state へ適用。spec §2.2/§2.3。writer のみ。
 static void
-handle_set_state(struct playspectra_control *c, ps_socket_t s, const cJSON *req)
+handle_set_state(struct playspectra_control *c, struct ps_conn *conn, const cJSON *req)
 {
+	if (conn->role != PS_ROLE_WRITER) {
+		// observer / hello 未完了からの書き込みは拒否(writer 排他 = protocol_error, spec §5.3)。
+		reply_error(conn->sock, req, "protocol_error", "not_writer");
+		return;
+	}
+
 	const cJSON *state = cJSON_GetObjectItemCaseSensitive(req, "state");
 
 	struct playspectra_set_state parsed;
 	if (playspectra_proto_parse_state(state, &parsed) != PLAYSPECTRA_PARSE_OK) {
-		reply_error(s, req, "validation_error", parsed.error);
+		reply_error(conn->sock, req, "validation_error", parsed.error);
 		return;
 	}
 
@@ -232,7 +412,7 @@ handle_set_state(struct playspectra_control *c, ps_socket_t s, const cJSON *req)
 		cJSON *r = cJSON_CreateObject();
 		cJSON_AddBoolToObject(r, "applied", false);
 		cJSON_AddStringToObject(r, "reason", "stale_frame");
-		reply_ok(s, req, r);
+		reply_ok(conn->sock, req, r);
 		return;
 	}
 
@@ -247,21 +427,47 @@ handle_set_state(struct playspectra_control *c, ps_socket_t s, const cJSON *req)
 	cJSON *r = cJSON_CreateObject();
 	cJSON_AddBoolToObject(r, "applied", true);
 	cJSON_AddNumberToObject(r, "sequence", (double)sequence);
-	reply_ok(s, req, r);
+	reply_ok(conn->sock, req, r);
+}
+
+// 現在の VirtualDeviceState 全体を返す(spec §5.4 get_state)。observer/writer どちらでも可。
+static void
+handle_get_state(struct playspectra_control *c, struct ps_conn *conn, const cJSON *req)
+{
+	struct xrt_space_relation head;
+	playspectra_state_get_head(c->state, &head);
+
+	cJSON *r = cJSON_CreateObject();
+	cJSON *state = cJSON_AddObjectToObject(r, "state");
+	cJSON_AddNumberToObject(state, "protocol_version", PS_PROTOCOL_VERSION);
+	cJSON_AddNumberToObject(state, "sequence", (double)c->sequence);
+	cJSON *hmd = cJSON_AddObjectToObject(state, "hmd");
+	cJSON_AddBoolToObject(hmd, "connected", true);
+	cJSON_AddItemToObject(hmd, "head", relation_to_pose_json(&head));
+	cJSON_AddItemToObject(state, "left", ctrl_to_json(c, PLAYSPECTRA_LEFT));
+	cJSON_AddItemToObject(state, "right", ctrl_to_json(c, PLAYSPECTRA_RIGHT));
+	reply_ok(conn->sock, req, r);
 }
 
 static void
-handle_status(struct playspectra_control *c, ps_socket_t s, const cJSON *req)
+handle_status(struct playspectra_control *c, struct ps_conn *conn, const cJSON *req)
 {
+	int observers = 0;
+	for (int i = 0; i < PS_MAX_CONN; i++) {
+		if (c->conns[i].sock != PS_INVALID_SOCKET && c->conns[i].role == PS_ROLE_OBSERVER) {
+			observers++;
+		}
+	}
 	cJSON *r = cJSON_CreateObject();
-	cJSON_AddBoolToObject(r, "writer_connected", true);
+	cJSON_AddBoolToObject(r, "writer_connected", any_writer(c));
+	cJSON_AddNumberToObject(r, "observers", observers);
 	cJSON_AddNumberToObject(r, "sequence", (double)c->sequence);
 	cJSON_AddStringToObject(r, "runtime", "monado");
-	reply_ok(s, req, r);
+	reply_ok(conn->sock, req, r);
 }
 
 static void
-dispatch_line(struct playspectra_control *c, ps_socket_t s, char *line)
+dispatch_line(struct playspectra_control *c, struct ps_conn *conn, char *line)
 {
 	cJSON *req = cJSON_Parse(line);
 	if (req == NULL) {
@@ -269,55 +475,51 @@ dispatch_line(struct playspectra_control *c, ps_socket_t s, char *line)
 		cJSON_AddBoolToObject(r, "ok", false);
 		cJSON_AddStringToObject(r, "error_type", "protocol_error");
 		cJSON_AddStringToObject(r, "error", "invalid_json");
-		send_json_line(s, r);
+		send_json_line(conn->sock, r);
 		cJSON_Delete(r);
 		return;
 	}
 	const cJSON *cmd = cJSON_GetObjectItemCaseSensitive(req, "cmd");
 	if (cJSON_IsString(cmd)) {
 		if (strcmp(cmd->valuestring, "hello") == 0) {
-			handle_hello(c, s, req);
+			handle_hello(c, conn, req);
 		} else if (strcmp(cmd->valuestring, "set_state") == 0) {
-			handle_set_state(c, s, req);
+			handle_set_state(c, conn, req);
+		} else if (strcmp(cmd->valuestring, "get_state") == 0) {
+			handle_get_state(c, conn, req);
 		} else if (strcmp(cmd->valuestring, "status") == 0) {
-			handle_status(c, s, req);
+			handle_status(c, conn, req);
 		} else {
-			reply_error(s, req, "protocol_error", "unknown_cmd");
+			reply_error(conn->sock, req, "protocol_error", "unknown_cmd");
 		}
 	} else {
-		reply_error(s, req, "protocol_error", "missing_cmd");
+		reply_error(conn->sock, req, "protocol_error", "missing_cmd");
 	}
 	cJSON_Delete(req);
 }
 
-// select で readable/timeout を待つ。1=readable / 2=timeout / 0=stop / -1=error。
-// blocking accept()/recv() は Linux では close() で確実に解除されない(Monado/WSL で実測)ため、
-// 200ms タイムアウト付きにして、stop フラグと haptic キューを定期的にチェックできるようにする。
-static int
-wait_readable(ps_socket_t s, struct os_thread_helper *oth)
+
+/*
+ * イベント broadcast / 接続の読み取り。
+ */
+
+// 1行を接続中の全ハンドシェイク済みクライアント(writer + observer)へ送る。
+static void
+broadcast_line(struct playspectra_control *c, const char *str, size_t len)
 {
-	if (!os_thread_helper_is_running(oth)) {
-		return 0;
+	for (int i = 0; i < PS_MAX_CONN; i++) {
+		struct ps_conn *cn = &c->conns[i];
+		if (cn->sock != PS_INVALID_SOCKET && cn->role != PS_ROLE_NONE) {
+			(void)send(cn->sock, str, (int)len, 0);
+			(void)send(cn->sock, "\n", 1, 0);
+		}
 	}
-	fd_set rfds;
-	FD_ZERO(&rfds);
-	FD_SET(s, &rfds);
-	struct timeval tv;
-	tv.tv_sec = 0;
-	tv.tv_usec = 200 * 1000; // 200 ms
-	int r = select((int)s + 1, &rfds, NULL, NULL, &tv);
-	if (!os_thread_helper_is_running(oth)) {
-		return 0; // stop during select
-	}
-	if (r < 0) {
-		return -1;
-	}
-	return (r == 0) ? 2 : 1;
 }
 
-// 共有 state に溜まった haptic イベントを接続中の socket へ送出する(spec §5.4 events)。
+// 共有 state に溜まった haptic イベントを全クライアントへ broadcast(spec §5.4 events)。
+// キューからは1度だけ pop し、JSON を1回組み立てて全接続へ配る(observer 複数対応)。
 static void
-drain_haptics(struct playspectra_control *c, ps_socket_t conn)
+broadcast_haptics(struct playspectra_control *c)
 {
 	struct playspectra_haptic_event e;
 	while (playspectra_state_pop_haptic(c->state, &e)) {
@@ -327,51 +529,39 @@ drain_haptics(struct playspectra_control *c, ps_socket_t conn)
 		cJSON_AddNumberToObject(o, "frequency", e.frequency);
 		cJSON_AddNumberToObject(o, "amplitude", e.amplitude);
 		cJSON_AddNumberToObject(o, "duration_ns", (double)e.duration_ns);
-		send_json_line(conn, o);
+		char *str = cJSON_PrintUnformatted(o);
+		if (str != NULL) {
+			broadcast_line(c, str, strlen(str));
+			cJSON_free(str);
+		}
 		cJSON_Delete(o);
 	}
 }
 
-// 1接続を NDJSON で処理(切断または stop まで)。
+// 1接続から読めるだけ読んで NDJSON 行を dispatch する。切断/エラーなら *closed=true。
 static void
-serve_connection(struct playspectra_control *c, ps_socket_t conn)
+service_conn_readable(struct playspectra_control *c, struct ps_conn *conn, bool *closed)
 {
-	char *buf = malloc(PS_LINE_MAX);
-	if (buf == NULL) {
+	char chunk[4096];
+	int n = (int)recv(conn->sock, chunk, sizeof(chunk), 0);
+	if (n <= 0) {
+		*closed = true; // 切断 or エラー
 		return;
 	}
-	size_t used = 0;
-	while (os_thread_helper_is_running(&c->oth)) {
-		int w = wait_readable(conn, &c->oth);
-		if (w == 0 || w < 0) {
-			break; // stop or error
-		}
-		drain_haptics(c, conn); // 接続中は haptic イベントを流す
-		if (w == 2) {
-			continue; // timeout: haptic を流しただけ
-		}
-		// w == 1: readable
-		char chunk[4096];
-		int n = (int)recv(conn, chunk, sizeof(chunk), 0);
-		if (n <= 0) {
-			break; // 切断
-		}
-		for (int i = 0; i < n; i++) {
-			char ch = chunk[i];
-			if (ch == '\n') {
-				buf[used] = '\0';
-				if (used > 0) {
-					dispatch_line(c, conn, buf);
-				}
-				used = 0;
-			} else if (used + 1 < PS_LINE_MAX) {
-				buf[used++] = ch;
-			} else {
-				used = 0; // 1 MiB 超過 → 破棄(spec §5.1)
+	for (int i = 0; i < n; i++) {
+		char ch = chunk[i];
+		if (ch == '\n') {
+			conn->buf[conn->used] = '\0';
+			if (conn->used > 0) {
+				dispatch_line(c, conn, conn->buf);
 			}
+			conn->used = 0;
+		} else if (conn->used + 1 < PS_LINE_MAX) {
+			conn->buf[conn->used++] = ch;
+		} else {
+			conn->used = 0; // 1 MiB 超過 → 破棄(spec §5.1)
 		}
 	}
-	free(buf);
 }
 
 static void *
@@ -379,21 +569,67 @@ control_thread(void *ptr)
 {
 	struct playspectra_control *c = (struct playspectra_control *)ptr;
 	while (os_thread_helper_is_running(&c->oth)) {
-		int w = wait_readable(c->listen_sock, &c->oth);
-		if (w == 0 || w < 0) {
-			break; // stop or listen socket error
+		fd_set rfds;
+		FD_ZERO(&rfds);
+		FD_SET(c->listen_sock, &rfds);
+		ps_socket_t maxfd = c->listen_sock;
+		for (int i = 0; i < PS_MAX_CONN; i++) {
+			ps_socket_t s = c->conns[i].sock;
+			if (s != PS_INVALID_SOCKET) {
+				FD_SET(s, &rfds);
+				if (s > maxfd) {
+					maxfd = s; // Windows では nfds は無視される
+				}
+			}
 		}
-		if (w == 2) {
-			continue; // timeout: no incoming connection
+
+		struct timeval tv;
+		tv.tv_sec = 0;
+		tv.tv_usec = 200 * 1000; // 200 ms(stop フラグ / haptic を定期チェック)
+		int r = select((int)maxfd + 1, &rfds, NULL, NULL, &tv);
+		if (!os_thread_helper_is_running(&c->oth)) {
+			break; // stop during select
 		}
-		ps_socket_t conn = accept(c->listen_sock, NULL, NULL);
-		if (conn == PS_INVALID_SOCKET) {
-			continue;
+		if (r < 0) {
+			continue; // select エラー(EINTR 等): 次周回へ(200ms timeout が実質の休止)
 		}
-		CTL_INFO(c, "PlaySpectra control: writer connected");
-		serve_connection(c, conn);
-		ps_close_socket(conn);
-		CTL_INFO(c, "PlaySpectra control: writer disconnected (state held)");
+
+		// haptic は timeout / 活動どちらでも流す(接続中の全 observer/writer へ)。
+		broadcast_haptics(c);
+		if (r == 0) {
+			continue; // timeout: 新規接続も読み取りも無し
+		}
+
+		// 新規接続を受け付ける。
+		if (FD_ISSET(c->listen_sock, &rfds)) {
+			ps_socket_t conn = accept(c->listen_sock, NULL, NULL);
+			if (conn != PS_INVALID_SOCKET) {
+				struct ps_conn *slot = alloc_conn(c, conn);
+				if (slot == NULL) {
+					ps_close_socket(conn); // 満杯 or buf 確保失敗
+					CTL_INFO(c, "PlaySpectra control: connection rejected (full)");
+				} else {
+					CTL_INFO(c, "PlaySpectra control: client connected");
+				}
+			}
+		}
+
+		// 既存接続の読み取り。
+		for (int i = 0; i < PS_MAX_CONN; i++) {
+			struct ps_conn *cn = &c->conns[i];
+			if (cn->sock == PS_INVALID_SOCKET || !FD_ISSET(cn->sock, &rfds)) {
+				continue;
+			}
+			bool closed = false;
+			service_conn_readable(c, cn, &closed);
+			if (closed) {
+				bool was_writer = (cn->role == PS_ROLE_WRITER);
+				free_conn(cn);
+				// writer 切断でも state は保持(device は消さない, spec §5.3)。
+				CTL_INFO(c, was_writer ? "PlaySpectra control: writer disconnected (state held)"
+				                       : "PlaySpectra control: observer disconnected");
+			}
+		}
 	}
 	return NULL;
 }
@@ -430,7 +666,7 @@ playspectra_control_start(struct playspectra_state *state, uint16_t port)
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1 のみ
 	addr.sin_port = htons(port);
-	if (bind(ls, (struct sockaddr *)&addr, sizeof(addr)) != 0 || listen(ls, 1) != 0) {
+	if (bind(ls, (struct sockaddr *)&addr, sizeof(addr)) != 0 || listen(ls, PS_MAX_CONN) != 0) {
 		ps_close_socket(ls);
 		return NULL;
 	}
@@ -442,6 +678,11 @@ playspectra_control_start(struct playspectra_state *state, uint16_t port)
 	c->port = port;
 	c->sequence = 0;
 	c->log_level = U_LOGGING_WARN;
+	// calloc の 0 は Linux で fd=0(stdin)と衝突するため、全スロットを明示的に空にする。
+	for (int i = 0; i < PS_MAX_CONN; i++) {
+		c->conns[i].sock = PS_INVALID_SOCKET;
+		c->conns[i].buf = NULL;
+	}
 
 	os_thread_helper_init(&c->oth);
 	if (os_thread_helper_start(&c->oth, control_thread, c) != 0) {
@@ -460,12 +701,19 @@ playspectra_control_stop(struct playspectra_control *c)
 	if (c == NULL) {
 		return;
 	}
-	// stop フラグを立ててスレッド join。wait_readable が 200ms 以内に is_running=false を
-	// 検知して抜けるので、close() で accept を叩き起こす必要はない(Linux では不確実なため)。
+	// stop フラグを立ててスレッド join。select が 200ms 以内に is_running=false を検知して抜けるので、
+	// close() で accept を叩き起こす必要はない(Linux では不確実なため)。
 	os_thread_helper_stop_and_wait(&c->oth);
 	os_thread_helper_destroy(&c->oth);
 	if (c->listen_sock != PS_INVALID_SOCKET) {
 		ps_close_socket(c->listen_sock);
+	}
+	// 残っている接続を閉じ、行バッファを解放(スレッドは既に停止済み)。
+	for (int i = 0; i < PS_MAX_CONN; i++) {
+		if (c->conns[i].sock != PS_INVALID_SOCKET) {
+			ps_close_socket(c->conns[i].sock);
+		}
+		free(c->conns[i].buf);
 	}
 #ifdef _WIN32
 	WSACleanup();
