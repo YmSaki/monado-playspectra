@@ -95,6 +95,12 @@ if(XRT_BUILD_DRIVER_PLAYSPECTRA)
 	if(WIN32)
 		target_link_libraries(drv_playspectra PRIVATE ws2_32)
 	endif()
+	if(MSVC)
+		# These sources carry Japanese comments (UTF-8). MSVC on a CJK locale defaults to the system
+		# code page (e.g. 932/Shift-JIS) and mis-decodes the multibyte sequences, swallowing following
+		# tokens (warning C4819 -> cascading phantom errors). /utf-8 forces UTF-8 source interpretation.
+		target_compile_options(drv_playspectra PRIVATE /utf-8)
+	endif()
 	list(APPEND ENABLED_HEADSET_DRIVERS playspectra)
 endif()
 

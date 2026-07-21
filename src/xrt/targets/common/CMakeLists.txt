@@ -63,6 +63,12 @@ endif()
 if(XRT_BUILD_DRIVER_PLAYSPECTRA)
 	target_sources(target_lists PRIVATE target_builder_playspectra.c)
 	target_link_libraries(target_lists PRIVATE drv_playspectra)
+	if(MSVC)
+		# target_builder_playspectra.c carries Japanese (UTF-8) comments; force UTF-8 source so MSVC on
+		# a CJK locale does not mis-decode them as the system code page (C4819 -> cascading errors). Same
+		# fix as drv_playspectra; harmless for target_lists' other ASCII/UTF-8 sources.
+		target_compile_options(target_lists PRIVATE /utf-8)
+	endif()
 endif()
 
 if(XRT_BUILD_DRIVER_SIMULAVR)
