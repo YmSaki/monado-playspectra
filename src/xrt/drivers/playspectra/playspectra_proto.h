@@ -29,6 +29,16 @@ enum playspectra_parse_status
 };
 
 /*!
+ * clock.mode (spec §4)。既定は realtime(latest-wins)。frame_synchronized は
+ * logical_frame ごとに一度適用し、同一 frame 異内容を conflict とする。
+ */
+enum playspectra_clock_mode
+{
+	PLAYSPECTRA_CLOCK_REALTIME = 0, // 既定
+	PLAYSPECTRA_CLOCK_FRAME_SYNCHRONIZED,
+};
+
+/*!
  * spec §2.1 PoseState を平文(double/bool)で表す。Monado 型に依存しない。
  */
 struct playspectra_pose
@@ -83,6 +93,9 @@ struct playspectra_set_state
 {
 	bool has_sequence;
 	uint64_t sequence;
+	enum playspectra_clock_mode clock_mode; // 既定 realtime(memset 0)
+	bool has_logical_frame;
+	int64_t logical_frame;
 	struct playspectra_head_update head;
 	struct playspectra_controller_update left;
 	struct playspectra_controller_update right;

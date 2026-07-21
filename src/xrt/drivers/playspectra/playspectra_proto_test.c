@@ -151,6 +151,19 @@ main(void)
 	CHECK(st == PLAYSPECTRA_PARSE_OK && s.right.present && !s.right.has_grip && s.right.input_count == 1,
 	      "13 inputs-only controller");
 
+	// 14. clock modes (spec §4)。既定 realtime、frame_synchronized は logical_frame 必須。
+	st = parse_str("{\"sequence\":1}", &s);
+	CHECK(st == PLAYSPECTRA_PARSE_OK && s.clock_mode == PLAYSPECTRA_CLOCK_REALTIME && !s.has_logical_frame,
+	      "14 no clock -> realtime default");
+	st = parse_str("{\"clock\":{\"mode\":\"realtime\"}}", &s);
+	CHECK(st == PLAYSPECTRA_PARSE_OK && s.clock_mode == PLAYSPECTRA_CLOCK_REALTIME, "14 realtime explicit");
+	st = parse_str("{\"clock\":{\"mode\":\"frame_synchronized\",\"logical_frame\":120}}", &s);
+	CHECK(st == PLAYSPECTRA_PARSE_OK && s.clock_mode == PLAYSPECTRA_CLOCK_FRAME_SYNCHRONIZED &&
+	          s.has_logical_frame && s.logical_frame == 120,
+	      "14 frame_synchronized + logical_frame");
+	st = parse_str("{\"clock\":{\"mode\":\"frame_synchronized\"}}", &s);
+	CHECK(st == PLAYSPECTRA_PARSE_VALIDATION_ERROR, "14 frame_synchronized w/o logical_frame -> validation error");
+
 	printf("\nplayspectra_proto_test: %d/%d passed\n", g_total - g_fail, g_total);
 	return g_fail == 0 ? 0 : 1;
 }

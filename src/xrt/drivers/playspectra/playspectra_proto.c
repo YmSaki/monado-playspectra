@@ -131,6 +131,24 @@ playspectra_proto_parse_state(const cJSON *state, struct playspectra_set_state *
 		out->sequence = (uint64_t)seq->valuedouble;
 	}
 
+	// clock (spec §4)。mode 既定 realtime。frame_synchronized は logical_frame 必須。
+	const cJSON *clock = cJSON_GetObjectItemCaseSensitive(state, "clock");
+	if (cJSON_IsObject(clock)) {
+		const cJSON *mode = cJSON_GetObjectItemCaseSensitive(clock, "mode");
+		if (cJSON_IsString(mode) && strcmp(mode->valuestring, "frame_synchronized") == 0) {
+			out->clock_mode = PLAYSPECTRA_CLOCK_FRAME_SYNCHRONIZED;
+		}
+		const cJSON *lf = cJSON_GetObjectItemCaseSensitive(clock, "logical_frame");
+		if (cJSON_IsNumber(lf)) {
+			out->has_logical_frame = true;
+			out->logical_frame = (int64_t)lf->valuedouble;
+		}
+	}
+	if (out->clock_mode == PLAYSPECTRA_CLOCK_FRAME_SYNCHRONIZED && !out->has_logical_frame) {
+		snprintf(out->error, sizeof(out->error), "missing:clock.logical_frame");
+		return PLAYSPECTRA_PARSE_VALIDATION_ERROR;
+	}
+
 	const cJSON *hmd = cJSON_GetObjectItemCaseSensitive(state, "hmd");
 	if (cJSON_IsObject(hmd) && get_flag(hmd, "connected", true)) {
 		const cJSON *head = cJSON_GetObjectItemCaseSensitive(hmd, "head");
