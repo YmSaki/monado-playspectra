@@ -381,6 +381,7 @@ option_with_deps(XRT_BUILD_DRIVER_XREAL_AIR "Enable Xreal Air HMD driver" DEPEND
 option_with_deps(XRT_BUILD_DRIVER_SIMULAVR "Enable simula driver" DEPENDS XRT_HAVE_REALSENSE)
 option_with_deps(XRT_BUILD_DRIVER_SOLARXR "Enable SolarXR driver" DEPENDS XRT_HAVE_LINUX XRT_MODULE_IPC)
 option(XRT_BUILD_DRIVER_SIMULATED "Enable simulated driver" ON)
+option(XRT_BUILD_DRIVER_PLAYSPECTRA "Enable PlaySpectra virtual device driver" ON)
 
 option(XRT_BUILD_SAMPLES "Enable compiling sample code implementations that will not be linked into any final targets" ON)
 set(XRT_IPC_MSG_SOCK_FILENAME monado_comp_ipc CACHE STRING "Service socket filename")
@@ -470,6 +471,7 @@ list(
 	"CONTACTGLOVE"
 	"DAYDREAM"
 	"SIMULATED"
+	"PLAYSPECTRA"
 	"HANDTRACKING"
 	"HDK"
 	"HYDRA"
@@ -744,6 +746,7 @@ message(STATUS "#    DRIVER_RIFT_SENSOR:          ${XRT_BUILD_DRIVER_RIFT_SENSOR
 message(STATUS "#    DRIVER_RIFT_S:               ${XRT_BUILD_DRIVER_RIFT_S}")
 message(STATUS "#    DRIVER_ROKID:                ${XRT_BUILD_DRIVER_ROKID}")
 message(STATUS "#    DRIVER_SIMULATED:            ${XRT_BUILD_DRIVER_SIMULATED}")
+message(STATUS "#    DRIVER_PLAYSPECTRA:          ${XRT_BUILD_DRIVER_PLAYSPECTRA}")
 message(STATUS "#    DRIVER_SIMULAVR:             ${XRT_BUILD_DRIVER_SIMULAVR}")
 message(STATUS "#    DRIVER_SURVIVE:              ${XRT_BUILD_DRIVER_SURVIVE}")
 message(STATUS "#    DRIVER_TWRAP:                ${XRT_BUILD_DRIVER_TWRAP}")

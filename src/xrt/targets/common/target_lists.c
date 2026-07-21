@@ -120,6 +120,10 @@ xrt_builder_create_func_t target_builder_list[] = {
     t_builder_remote_create,
 #endif // T_BUILDER_REMOTE
 
+#ifdef T_BUILDER_PLAYSPECTRA // High up to override any real hardware (headless automation).
+    t_builder_playspectra_create,
+#endif // T_BUILDER_PLAYSPECTRA
+
 #ifdef T_BUILDER_SIMULATED // High up to override any real hardware.
     t_builder_simulated_create,
 #endif // T_BUILDER_SIMULATED
