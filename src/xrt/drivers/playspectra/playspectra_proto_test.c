@@ -164,6 +164,53 @@ main(void)
 	st = parse_str("{\"clock\":{\"mode\":\"frame_synchronized\"}}", &s);
 	CHECK(st == PLAYSPECTRA_PARSE_VALIDATION_ERROR, "14 frame_synchronized w/o logical_frame -> validation error");
 
+	// 15. frame_synchronized の verdict 判定(spec §4)。apply_frame_synchronized が実際に使う純粋関数。
+	CHECK(playspectra_proto_frame_decide(false, 0, 0, 5, 111) == PLAYSPECTRA_FRAME_APPLY,
+	      "15 first frame (no prior) -> APPLY");
+	CHECK(playspectra_proto_frame_decide(true, 100, 111, 101, 222) == PLAYSPECTRA_FRAME_APPLY,
+	      "15 newer frame -> APPLY");
+	CHECK(playspectra_proto_frame_decide(true, 100, 111, 100, 111) == PLAYSPECTRA_FRAME_IDEMPOTENT,
+	      "15 same frame + same sig -> IDEMPOTENT");
+	CHECK(playspectra_proto_frame_decide(true, 100, 111, 100, 222) == PLAYSPECTRA_FRAME_CONFLICT,
+	      "15 same frame + diff sig -> CONFLICT");
+	CHECK(playspectra_proto_frame_decide(true, 100, 111, 99, 111) == PLAYSPECTRA_FRAME_STALE,
+	      "15 older frame -> STALE");
+	CHECK(playspectra_proto_frame_decide(true, 100, 111, 99, 222) == PLAYSPECTRA_FRAME_STALE,
+	      "15 older frame ignores sig -> STALE");
+
+	// 16. content_sig(spec §4)。決定的・head/入力値の差を検出・入力は順序非依存(XOR)。
+	struct playspectra_set_state a, b;
+	memset(&a, 0, sizeof(a));
+	memset(&b, 0, sizeof(b));
+	CHECK(playspectra_proto_content_sig(&a) == playspectra_proto_content_sig(&b),
+	      "16 identical (empty) state -> same sig");
+	b.head.present = true;
+	b.head.pose.position[1] = 1.5;
+	CHECK(playspectra_proto_content_sig(&a) != playspectra_proto_content_sig(&b), "16 head present differs -> diff sig");
+
+	struct playspectra_set_state p, q;
+	memset(&p, 0, sizeof(p));
+	memset(&q, 0, sizeof(q));
+	p.left.present = true;
+	p.left.input_count = 2;
+	strcpy(p.left.inputs[0].path, "/input/trigger/value");
+	p.left.inputs[0].num = 0.5;
+	strcpy(p.left.inputs[1].path, "/button/a/click");
+	p.left.inputs[1].is_bool = true;
+	p.left.inputs[1].flag = true;
+	// q: 同じ2入力を逆順で。
+	q.left.present = true;
+	q.left.input_count = 2;
+	strcpy(q.left.inputs[0].path, "/button/a/click");
+	q.left.inputs[0].is_bool = true;
+	q.left.inputs[0].flag = true;
+	strcpy(q.left.inputs[1].path, "/input/trigger/value");
+	q.left.inputs[1].num = 0.5;
+	CHECK(playspectra_proto_content_sig(&p) == playspectra_proto_content_sig(&q),
+	      "16 input order-independent -> same sig");
+	q.left.inputs[1].num = 0.9; // trigger の値を変える
+	CHECK(playspectra_proto_content_sig(&p) != playspectra_proto_content_sig(&q), "16 input value differs -> diff sig");
+
 	printf("\nplayspectra_proto_test: %d/%d passed\n", g_total - g_fail, g_total);
 	return g_fail == 0 ? 0 : 1;
 }

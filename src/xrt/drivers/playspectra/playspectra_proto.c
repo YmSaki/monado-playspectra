@@ -177,3 +177,87 @@ playspectra_proto_hello_version_ok(const cJSON *req, int expected_version)
 	const cJSON *pv = cJSON_GetObjectItemCaseSensitive(req, "protocol_version");
 	return cJSON_IsNumber(pv) && (int)pv->valuedouble == expected_version;
 }
+
+/*
+ * frame_synchronized の重複判定用「内容署名」(spec §4)。envelope の sequence/clock は
+ * 含めず、device 状態(head + 両手の grip/aim/inputs)だけを FNV-1a でハッシュする。
+ * inputs は順序非依存(各エントリのハッシュを XOR)にして、順序違いの同一内容を conflict にしない。
+ */
+static void
+fnv1a(uint64_t *h, const void *data, size_t len)
+{
+	const uint8_t *p = (const uint8_t *)data;
+	for (size_t i = 0; i < len; i++) {
+		*h ^= p[i];
+		*h *= 1099511628211ULL;
+	}
+}
+
+static void
+pose_sig(uint64_t *h, const struct playspectra_pose *p)
+{
+	fnv1a(h, p->position, sizeof(p->position));
+	fnv1a(h, p->orientation, sizeof(p->orientation));
+	uint8_t flags = (uint8_t)((p->position_valid ? 1 : 0) | (p->orientation_valid ? 2 : 0) |
+	                          (p->position_tracked ? 4 : 0) | (p->orientation_tracked ? 8 : 0));
+	fnv1a(h, &flags, sizeof(flags));
+}
+
+static void
+ctrl_sig(uint64_t *h, const struct playspectra_controller_update *c)
+{
+	uint8_t present = (uint8_t)(c->present ? 1 : 0);
+	fnv1a(h, &present, sizeof(present));
+	if (!c->present) {
+		return;
+	}
+	uint8_t g = (uint8_t)(c->has_grip ? 1 : 0);
+	uint8_t a = (uint8_t)(c->has_aim ? 1 : 0);
+	fnv1a(h, &g, sizeof(g));
+	if (c->has_grip) {
+		pose_sig(h, &c->grip);
+	}
+	fnv1a(h, &a, sizeof(a));
+	if (c->has_aim) {
+		pose_sig(h, &c->aim);
+	}
+	uint64_t inacc = 0; // inputs は順序非依存
+	for (int i = 0; i < c->input_count; i++) {
+		uint64_t ih = 1469598103934665603ULL;
+		fnv1a(&ih, c->inputs[i].path, strlen(c->inputs[i].path));
+		uint8_t b = (uint8_t)(c->inputs[i].is_bool ? 1 : 0);
+		fnv1a(&ih, &b, sizeof(b));
+		fnv1a(&ih, &c->inputs[i].num, sizeof(c->inputs[i].num));
+		uint8_t f = (uint8_t)(c->inputs[i].flag ? 1 : 0);
+		fnv1a(&ih, &f, sizeof(f));
+		inacc ^= ih;
+	}
+	fnv1a(h, &inacc, sizeof(inacc));
+}
+
+uint64_t
+playspectra_proto_content_sig(const struct playspectra_set_state *s)
+{
+	uint64_t h = 1469598103934665603ULL; // FNV-1a offset basis
+	uint8_t hp = (uint8_t)(s->head.present ? 1 : 0);
+	fnv1a(&h, &hp, sizeof(hp));
+	if (s->head.present) {
+		pose_sig(&h, &s->head.pose);
+	}
+	ctrl_sig(&h, &s->left);
+	ctrl_sig(&h, &s->right);
+	return h;
+}
+
+enum playspectra_frame_verdict
+playspectra_proto_frame_decide(bool has_frame, int64_t last_frame, uint64_t last_sig, int64_t lf, uint64_t sig)
+{
+	if (has_frame && lf < last_frame) {
+		return PLAYSPECTRA_FRAME_STALE; // 既に次の frame を適用済み → 遅延到着は破棄
+	}
+	if (has_frame && lf == last_frame) {
+		// 同一 frame: 内容が一致すれば冪等、異なれば conflict。
+		return (sig == last_sig) ? PLAYSPECTRA_FRAME_IDEMPOTENT : PLAYSPECTRA_FRAME_CONFLICT;
+	}
+	return PLAYSPECTRA_FRAME_APPLY; // 新しい frame(または最初)
+}

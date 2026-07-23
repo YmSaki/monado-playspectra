@@ -116,6 +116,30 @@ playspectra_proto_parse_state(const cJSON *state, struct playspectra_set_state *
 bool
 playspectra_proto_hello_version_ok(const cJSON *req, int expected_version);
 
+/*!
+ * frame_synchronized の内容署名(spec §4)。envelope の sequence/clock は含めず、device 状態
+ * (head + 両手の grip/aim/inputs)だけを FNV-1a でハッシュする。inputs は順序非依存。純粋関数。
+ */
+uint64_t
+playspectra_proto_content_sig(const struct playspectra_set_state *s);
+
+/*!
+ * frame_synchronized の verdict(spec §4)。logical_frame と content_sig だけで決まる I/O 非依存の判定。
+ */
+enum playspectra_frame_verdict
+{
+	PLAYSPECTRA_FRAME_APPLY = 0,  // 新 frame(または最初) → 適用して記録
+	PLAYSPECTRA_FRAME_IDEMPOTENT, // 同一 frame・同一内容 → 再適用しない冪等成功
+	PLAYSPECTRA_FRAME_CONFLICT,   // 同一 frame・異内容 → conflict_error
+	PLAYSPECTRA_FRAME_STALE,      // 古い frame → 破棄
+};
+
+/*!
+ * frame_synchronized の verdict を返す(spec §4)。呼び出し側が verdict に応じて apply と応答 JSON を行う。
+ */
+enum playspectra_frame_verdict
+playspectra_proto_frame_decide(bool has_frame, int64_t last_frame, uint64_t last_sig, int64_t lf, uint64_t sig);
+
 #ifdef __cplusplus
 }
 #endif
